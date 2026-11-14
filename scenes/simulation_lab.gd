@@ -3,6 +3,7 @@ extends Control
 
 const Simulation = preload("res://domain/simulation.gd")
 const Config = preload("res://domain/simulation_config.gd")
+const HistoryPanel = preload("res://scenes/history_panel.gd")
 const CREW_SELECTION_SCENE := "res://scenes/crew_selection.tscn"
 const SELECTED_CREW_META := "mars_selected_crew_ids"
 const SOUND_VALUES_META := "mars_sound_percentages"
@@ -40,7 +41,25 @@ const BUILDING_NAMES := {
 var simulation := Simulation.new()
 var _message: Label
 var _sol_label: Label
-var _log: TextEdit
+var _log: HistoryPanel
+var _building_history: HistoryPanel
+var _history_generation: int = -1
+var _history_building: String = ""
+var _robot_choice: OptionButton
+var _destination_choice: OptionButton
+var _event_status: Label
+var _robot_status: Label
+var _shelter_button: Button
+var _bury_button: Button
+var _upgrade_choice: OptionButton
+var _upgrade_status: Label
+var _maintenance_choice: OptionButton
+var _maintenance_status: Label
+var _maintenance_session: String = ""
+var _inspected_id: String = "b1"
+var _inspector: Label
+var _inspected_power_button: Button
+var _report_status: Label
 var _resource_labels: Dictionary = {}
 var _building_definitions: Dictionary = {}
 var _build_menu: PanelContainer
@@ -86,7 +105,7 @@ func _ready() -> void:
 	title.text = "MarSins | Banco de simulación · tablero 3D isométrico"
 	root.add_child(title)
 	var help := Label.new()
-	help.text = "La tripulación se elige en su escena y puedes cambiarla con el botón superior. Pulsa una celda vacía para abrir construcciones.\nLas celdas oscurecidas forman el espacio reservado de cada edificio. Pulsa un edificio para encender/apagar.\nCámara: A/D o ←/→ giran; W/S o ↑/↓ acercan/alejan. También puedes arrastrar con el botón derecho o usar la rueda.\nEspacio inicia/pausa, Esc o Tab abre el sonido, y R reinicia."
+	help.text = "La tripulación se elige en su escena y puedes cambiarla con el botón superior. Pulsa una celda vacía para abrir construcciones.\nLas celdas oscurecidas forman el espacio reservado de cada edificio. Pulsa una huella ocupada para inspeccionarla y encender/apagar.\nCámara: A/D o ←/→ giran; W/S o ↑/↓ acercan/alejan. También puedes arrastrar con el botón derecho o usar la rueda.\nEspacio inicia/pausa, Esc o Tab abre el sonido, y R reinicia."
 	root.add_child(help)
 
 	var crew_row := HBoxContainer.new()
@@ -100,10 +119,6 @@ func _ready() -> void:
 	change_crew_button.tooltip_text = "Volver a la selección de personajes"
 	change_crew_button.pressed.connect(_open_crew_selection)
 	crew_row.add_child(change_crew_button)
-	var pending := Label.new()
-	pending.text = "* Efectos pendientes de radiación, mejoras y ROBERTS. Sin eventos ni mantenimiento en esta base."
-	root.add_child(pending)
-
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(body)
@@ -136,17 +151,38 @@ func _ready() -> void:
 	_create_camera_controls(board_view)
 	_create_simulation_controls(board_view)
 
+	var info_scroll := ScrollContainer.new()
+	info_scroll.name = "SimulationInfoScroll"
+	info_scroll.custom_minimum_size = Vector2(340.0, 0.0)
+	info_scroll.size_flags_horizontal = Control.SIZE_SHRINK_END
+	info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(info_scroll)
 	var info := VBoxContainer.new()
-	info.custom_minimum_size = Vector2(330, 0)
-	info.size_flags_horizontal = Control.SIZE_SHRINK_END
-	body.add_child(info)
+	info.custom_minimum_size.x = 330.0
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_scroll.add_child(info)
 	_message = Label.new()
 	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_message.hide()
 	info.add_child(_message)
-	_log = TextEdit.new()
-	_log.editable = false
-	_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_create_feature_controls(info)
+	_add_section_title(info, "Inspector del edificio")
+	_inspector = Label.new()
+	_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.add_child(_inspector)
+	_inspected_power_button = Button.new()
+	_inspected_power_button.text = "Encender / apagar edificio"
+	_inspected_power_button.pressed.connect(_toggle_inspected_building)
+	info.add_child(_inspected_power_button)
+	_building_history = HistoryPanel.new()
+	_building_history.name = "BuildingHistory"
+	_building_history.custom_minimum_size.y = 110.0
+	info.add_child(_building_history)
+	_add_section_title(info, "Tripulación e historial")
+	_log = HistoryPanel.new()
+	_log.name = "EventHistory"
+	_log.custom_minimum_size.y = 190.0
 	info.add_child(_log)
 
 	var loaded := Config.load_file()
@@ -160,8 +196,172 @@ func _ready() -> void:
 	simulation.state_updated.connect(_render)
 	_reset()
 
+func _add_section_title(parent: VBoxContainer, title_text: String) -> void:
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 16)
+	parent.add_child(title)
+
+func _create_feature_controls(parent: VBoxContainer) -> void:
+	_add_section_title(parent, "Eventos · radiación · refugio")
+	_event_status = Label.new()
+	_event_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(_event_status)
+	var shelter_row := HBoxContainer.new()
+	parent.add_child(shelter_row)
+	_shelter_button = Button.new()
+	_shelter_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_shelter_button.pressed.connect(_toggle_shelter)
+	shelter_row.add_child(_shelter_button)
+	_bury_button = Button.new()
+	_bury_button.text = "Enterrar hábitat"
+	_bury_button.tooltip_text = "Cuesta 10 masa y 20 regolito; el trabajo tarda 25 segundos"
+	_bury_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_bury_button.pressed.connect(func() -> void: _show_result(simulation.bury_habitat()))
+	shelter_row.add_child(_bury_button)
+
+	_add_section_title(parent, "Expediciones ROBERT")
+	var mission_row := HBoxContainer.new()
+	parent.add_child(mission_row)
+	_robot_choice = OptionButton.new()
+	_robot_choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_robot_choice.add_item("ROBERT 1")
+	_robot_choice.add_item("ROBERT 2")
+	_robot_choice.select(0)
+	mission_row.add_child(_robot_choice)
+	_destination_choice = OptionButton.new()
+	_destination_choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var destination_ids := ["ice", "quarry", "wreckage"]
+	var destination_names := ["Hielo → agua", "Cantera → regolito", "Restos → masa"]
+	for index: int in range(destination_names.size()):
+		var destination_name: String = destination_names[index]
+		_destination_choice.add_item(destination_name)
+		_destination_choice.set_item_metadata(_destination_choice.item_count - 1, destination_ids[index])
+	_destination_choice.select(0)
+	mission_row.add_child(_destination_choice)
+	var send_button := Button.new()
+	send_button.text = "Enviar"
+	send_button.tooltip_text = "Enviar el ROBERT seleccionado a la expedición"
+	send_button.pressed.connect(_send_robert)
+	mission_row.add_child(send_button)
+	_robot_status = Label.new()
+	_robot_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(_robot_status)
+
+	_add_section_title(parent, "Mejoras")
+	var upgrade_row := HBoxContainer.new()
+	parent.add_child(upgrade_row)
+	_upgrade_choice = OptionButton.new()
+	_upgrade_choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	upgrade_row.add_child(_upgrade_choice)
+	var upgrade_button := Button.new()
+	upgrade_button.text = "Mejorar"
+	upgrade_button.pressed.connect(_start_selected_upgrade)
+	upgrade_row.add_child(upgrade_button)
+	_upgrade_status = Label.new()
+	_upgrade_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(_upgrade_status)
+
+	_add_section_title(parent, "Mantenimiento · controles provisionales")
+	var maintenance_choice_row := HBoxContainer.new()
+	parent.add_child(maintenance_choice_row)
+	_maintenance_choice = OptionButton.new()
+	_maintenance_choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	maintenance_choice_row.add_child(_maintenance_choice)
+	var attend_button := Button.new()
+	attend_button.text = "Atender"
+	attend_button.pressed.connect(_begin_maintenance)
+	maintenance_choice_row.add_child(attend_button)
+	var maintenance_result_row := HBoxContainer.new()
+	parent.add_child(maintenance_result_row)
+	var success_button := Button.new()
+	success_button.text = "Probar éxito"
+	success_button.tooltip_text = "Resultado temporal; falta integrar el minijuego de mantenimiento"
+	success_button.pressed.connect(func() -> void: _apply_maintenance_result(true))
+	maintenance_result_row.add_child(success_button)
+	var failure_button := Button.new()
+	failure_button.text = "Probar fallo"
+	failure_button.tooltip_text = "Resultado temporal; falta integrar el minijuego de mantenimiento"
+	failure_button.pressed.connect(func() -> void: _apply_maintenance_result(false))
+	maintenance_result_row.add_child(failure_button)
+	var abandon_button := Button.new()
+	abandon_button.text = "Abandonar"
+	abandon_button.pressed.connect(func() -> void: _apply_maintenance_result(false, true))
+	maintenance_result_row.add_child(abandon_button)
+	var reactivate_button := Button.new()
+	reactivate_button.text = "Reactivar"
+	reactivate_button.pressed.connect(_reactivate_selected_building)
+	maintenance_result_row.add_child(reactivate_button)
+	_maintenance_status = Label.new()
+	_maintenance_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(_maintenance_status)
+
+	_add_section_title(parent, "Informe por sol")
+	_report_status = Label.new()
+	_report_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(_report_status)
+
 func _process(delta: float) -> void:
 	simulation.advance(delta)
+
+func _send_robert() -> void:
+	if _robot_choice == null or _destination_choice == null or _destination_choice.selected < 0:
+		return
+	var robert_id := "robert_%d" % (_robot_choice.selected + 1)
+	var destination_id := str(_destination_choice.get_item_metadata(_destination_choice.selected))
+	_show_result(simulation.send_robert(robert_id, destination_id))
+
+func _toggle_shelter() -> void:
+	var snapshot: Dictionary = simulation.get_snapshot()
+	_show_result(simulation.set_sheltered(not bool(snapshot.get("sheltered", false))))
+
+func _start_selected_upgrade() -> void:
+	var building_id := _selected_option_id(_upgrade_choice)
+	if building_id.is_empty():
+		_show_message("Selecciona un edificio construido para mejorar.")
+		return
+	_show_result(simulation.start_upgrade(building_id))
+
+func _begin_maintenance() -> void:
+	var building_id := _selected_option_id(_maintenance_choice)
+	if building_id.is_empty():
+		_show_message("Construye un reactor o generador de oxígeno antes de atender mantenimiento.")
+		return
+	var result: Dictionary = simulation.begin_maintenance(building_id)
+	if result.ok:
+		_maintenance_session = str(result.result.get("id", ""))
+	_show_result(result)
+
+func _apply_maintenance_result(success: bool, abandoned: bool = false) -> void:
+	if _maintenance_session.is_empty():
+		_show_message("Primero pulsa Atender para iniciar una sesión de mantenimiento.")
+		return
+	var result: Dictionary = simulation.apply_maintenance_result(_maintenance_session, success, 0.0, abandoned)
+	if result.ok:
+		_maintenance_session = ""
+	_show_result(result)
+
+func _reactivate_selected_building() -> void:
+	var building_id := _selected_option_id(_maintenance_choice)
+	if building_id.is_empty():
+		_show_message("Selecciona un reactor o generador de oxígeno.")
+		return
+	_show_result(simulation.reactivate_building(building_id))
+
+func _toggle_inspected_building() -> void:
+	for building: Dictionary in simulation.get_snapshot().get("buildings", []):
+		if str(building.id) == _inspected_id:
+			_show_result(simulation.set_enabled(_inspected_id, not bool(building.enabled)))
+			return
+
+func _selected_option_id(option: OptionButton) -> String:
+	if option == null or option.selected < 0:
+		return ""
+	return str(option.get_item_metadata(option.selected))
+
+func _show_message(message: String) -> void:
+	_message.text = message
+	_message.show()
 
 func _sync_board_resolution() -> void:
 	if _viewport_container == null or _board_subviewport == null:
@@ -683,13 +883,21 @@ func _select_cell_at(mouse_position: Vector2) -> void:
 
 func _reset() -> void:
 	_reset_camera()
+	_maintenance_session = ""
+	_inspected_id = "b1"
+	_history_building = ""
+	_last_rendered_snapshot.clear()
 	_show_result(simulation.reset_run(_selected_crew_ids, 1))
 
 func _cell_clicked(cell: Vector2i) -> void:
 	for building: Dictionary in simulation.get_snapshot().get("buildings", []):
-		if building.x == cell.x and building.y == cell.y:
+		var anchor := Vector2i(int(building.x), int(building.y))
+		if cell in simulation.get_building_footprint_cells(str(building.kind), anchor):
+			_inspected_id = str(building.id)
 			_build_menu.hide()
 			_show_result(simulation.set_enabled(building.id, not building.enabled))
+			_last_rendered_snapshot.clear()
+			_render(simulation.get_snapshot())
 			return
 	_show_build_menu(cell)
 
@@ -698,13 +906,49 @@ func _show_result(result: Dictionary) -> void:
 		_message.text = ""
 		_message.hide()
 	else:
-		_message.text = "Rechazado: %s" % result.error_code
+		_message.text = _error_text(str(result.get("error_code", "unknown_error")))
 		_message.show()
+
+func _error_text(code: String) -> String:
+	var messages: Dictionary = {
+		"invalid_phase": "Esta acción no está disponible en esta fase de la partida.",
+		"invalid_building": "Ese tipo de construcción no está disponible.",
+		"outside_grid": "La casilla está fuera del tablero.",
+		"footprint_outside_grid": "La huella completa del edificio sale del tablero.",
+		"occupied_footprint": "Parte de esa huella ya está ocupada por otro edificio.",
+		"reactor_too_close": "El reactor debe estar al menos a dos casillas del hábitat.",
+		"unknown_robert": "No se encontró ese ROBERT.",
+		"unknown_destination": "No se encontró ese destino de expedición.",
+		"laboratory_not_operational": "El laboratorio debe estar terminado, encendido y con potencia.",
+		"insufficient_power": "No hay suficiente potencia libre.",
+		"robert_unavailable": "Este ROBERT está en misión o se perdió.",
+		"crew_sheltered": "Sal del refugio antes de iniciar una expedición o mejora.",
+		"insufficient_mass": "No hay suficiente masa para esta acción.",
+		"max_level": "Este edificio ya está en nivel 2.",
+		"upgrade_in_progress": "Este edificio ya tiene una mejora en curso.",
+		"building_under_construction": "Espera a que termine la construcción.",
+		"upgrade_not_supported": "El hábitat se protege mediante Enterrar y no admite mejora.",
+		"maintenance_not_pending": "Este edificio no tiene mantenimiento pendiente.",
+		"maintenance_suspended": "La sesión se suspendió por una crisis o por el refugio.",
+		"maintenance_attempts_exhausted": "Se agotaron los intentos o el tiempo disponible.",
+		"maintenance_cooling_down": "Espera a que termine el enfriamiento para reactivar.",
+		"maintenance_not_shutdown": "Este edificio no está apagado por mantenimiento.",
+		"maintenance_session_active": "Ya hay una sesión de este edificio abierta.",
+		"another_maintenance_active": "Termina la otra sesión de mantenimiento antes de abrir esta.",
+		"maintenance_result_already_closed": "Esta sesión ya se cerró o venció.",
+		"unknown_maintenance_session": "No hay una sesión de mantenimiento vigente.",
+		"burial_already_started": "El enterramiento del hábitat ya comenzó.",
+		"insufficient_resources": "Falta masa o regolito para enterrar el hábitat.",
+		"habitat_required": "El hábitat principal no se puede apagar."
+	}
+	return str(messages.get(code, "Acción rechazada: " + code))
 
 func _render(snapshot: Dictionary) -> void:
 	if not _last_rendered_snapshot.is_empty() and snapshot == _last_rendered_snapshot:
 		return
-	_last_rendered_snapshot = snapshot
+	_last_rendered_snapshot = snapshot.duplicate(true)
+	var new_run := int(snapshot.get("run_generation", -1)) != _history_generation
+	_history_generation = int(snapshot.get("run_generation", -1))
 	var resources: Dictionary = snapshot.resources
 	var power: Dictionary = snapshot.power
 	_run_button.disabled = snapshot.phase == "finished"
@@ -782,15 +1026,127 @@ func _render(snapshot: Dictionary) -> void:
 			_cell_materials[index].albedo_color = Color("78a96e")
 		else:
 			_cell_materials[index].albedo_color = Color("958c7d")
+	_render_feature_panels(snapshot, new_run)
 	var lines: PackedStringArray = []
 	for member: Dictionary in snapshot.crew:
-		lines.append("%s: %.1f salud" % [member.id, member.health])
+		lines.append("%s: %.1f salud · dosis %.2f" % [member.id, member.health, member.get("dose", 0.0)])
+	lines.append("Regolito: %.1f" % float(resources.get("regolith", 0.0)))
+	for robot: Dictionary in snapshot.get("roberts", []):
+		if robot.state == "on_mission":
+			lines.append("%s: en misión → %s · faltan %ds · soporte %s" % [robot.id, robot.destination, maxi(0, int(robot.return_seconds) - int(snapshot.elapsed_seconds)), robot.get("powered", false)])
+		else:
+			lines.append("%s: %s" % [robot.id, "disponible" if robot.state == "available" else "perdido"])
 	if not snapshot.result.is_empty():
 		lines.append("FINAL: %s" % snapshot.result.verdict)
+	if not snapshot.get("sol_reports", []).is_empty():
+		var report: Dictionary = snapshot.sol_reports[-1]
+		lines.append("Último informe · Sol %s%s: variación %s · bloqueos %s" % [report.get("sol", "?"), " parcial" if report.get("partial", false) else "", str(report.get("delta", {})), str(report.get("blocked_seconds", {}))])
 	lines.append("\nÚltimos hechos:")
-	for entry: Dictionary in snapshot.log.slice(maxi(0, snapshot.log.size() - 12)):
+	for entry: Dictionary in snapshot.log:
 		lines.append("%ss · %s · %s" % [entry.seconds, entry.reason, entry.target])
-	_log.text = "\n".join(lines)
+	_log.update_history("\n".join(lines), new_run)
+
+func _render_feature_panels(snapshot: Dictionary, new_run: bool) -> void:
+	var forecast: Dictionary = snapshot.get("forecast", simulation.get_forecast())
+	var current_event: Dictionary = snapshot.get("event", {})
+	var event_text := "sin evento activo"
+	if not current_event.is_empty():
+		event_text = "%s · %s · %d–%d s" % [current_event.get("kind", "evento"), current_event.get("state", ""), current_event.get("start_seconds", 0), current_event.get("end_seconds", 0)]
+	var storm_probability := roundi(float(forecast.get("storm", {}).get("probability", 0.0)) * 100.0)
+	var particles_probability := roundi(float(forecast.get("solar_particles", {}).get("probability", 0.0)) * 100.0)
+	var crew_dose := 0.0
+	for member: Dictionary in snapshot.get("crew", []):
+		crew_dose += float(member.get("dose", 0.0))
+	_event_status.text = "Pronóstico: tormenta %d%% · partículas solares %d%%\nEvento: %s\nRefugio: %s · hábitat: %s · dosis del equipo: %.2f" % [storm_probability, particles_probability, event_text, "activo" if snapshot.get("sheltered", false) else "inactivo", snapshot.get("burial", {}).get("state", "superficie"), crew_dose]
+	_shelter_button.text = "Salir del refugio" if snapshot.get("sheltered", false) else "Entrar al refugio"
+	_shelter_button.disabled = snapshot.get("phase") != "running"
+	var burial_state: String = str(snapshot.get("burial", {}).get("state", "surface"))
+	_bury_button.disabled = snapshot.get("phase") != "running" or burial_state != "surface"
+	_bury_button.text = "Enterrar hábitat" if burial_state == "surface" else ("Enterrando · %ss" % snapshot.get("burial", {}).get("remaining_seconds", 0) if burial_state == "building" else "Hábitat enterrado")
+
+	var selected_robert_id := "robert_%d" % (_robot_choice.selected + 1)
+	var destination_id := str(_destination_choice.get_item_metadata(_destination_choice.selected)) if _destination_choice.selected >= 0 else "ice"
+	var preview: Dictionary = simulation.preview_robert(selected_robert_id, destination_id)
+	var robot_lines: PackedStringArray = []
+	for robot: Dictionary in snapshot.get("roberts", []):
+		if robot.state == "on_mission":
+			robot_lines.append("%s: misión a %s, retorno en %ds" % [robot.id, robot.destination, maxi(0, int(robot.return_seconds) - int(snapshot.elapsed_seconds))])
+		else:
+			robot_lines.append("%s: %s" % [robot.id, "disponible" if robot.state == "available" else "perdido"])
+	if preview.ok:
+		_destination_choice.tooltip_text = "Carga prevista: %s %s · riesgo actual %.1f%%; puede cambiar con tormentas" % [preview.result.amount, preview.result.resource, float(preview.result.loss_probability) * 100.0]
+		_robot_status.text = "%s\nVista previa: %s %s · riesgo %.1f%%" % [" · ".join(robot_lines), preview.result.amount, preview.result.resource, float(preview.result.loss_probability) * 100.0]
+	else:
+		_destination_choice.tooltip_text = _error_text(str(preview.get("error_code", "invalid_phase")))
+		_robot_status.text = "%s\nSalida bloqueada: %s" % [" · ".join(robot_lines), _error_text(str(preview.get("error_code", "invalid_phase")))]
+
+	var selected_upgrade_id := _selected_option_id(_upgrade_choice)
+	_upgrade_choice.clear()
+	var selected_upgrade_index := -1
+	for building: Dictionary in snapshot.get("buildings", []):
+		if building.kind == "habitat":
+			continue
+		_upgrade_choice.add_item("%s · %s N%d" % [building.id, BUILDING_NAMES.get(building.kind, building.kind), building.level])
+		var index := _upgrade_choice.item_count - 1
+		_upgrade_choice.set_item_metadata(index, building.id)
+		if building.id == selected_upgrade_id or (selected_upgrade_id.is_empty() and building.id == _inspected_id):
+			selected_upgrade_index = index
+	if selected_upgrade_index < 0 and _upgrade_choice.item_count > 0:
+		selected_upgrade_index = 0
+	if selected_upgrade_index >= 0:
+		_upgrade_choice.select(selected_upgrade_index)
+	_upgrade_status.text = "Construye un edificio para ver su costo y duración de mejora."
+	if _upgrade_choice.selected >= 0:
+		var upgrade: Dictionary = simulation.preview_upgrade(_selected_option_id(_upgrade_choice))
+		if upgrade.ok:
+			_upgrade_status.text = "Costo: %.0f masa · trabajo: %s s (estimado con la tripulación actual)." % [upgrade.cost.mass, upgrade.result.duration_seconds]
+		else:
+			_upgrade_status.text = _error_text(str(upgrade.error_code))
+
+	var selected_maintenance_id := _selected_option_id(_maintenance_choice)
+	_maintenance_choice.clear()
+	var maintenance_lines: PackedStringArray = []
+	var maintenance_index := -1
+	for building: Dictionary in snapshot.get("buildings", []):
+		if building.kind not in ["reactor", "oxygen_generator"]:
+			continue
+		_maintenance_choice.add_item("%s · %s" % [building.id, BUILDING_NAMES.get(building.kind, building.kind)])
+		var index := _maintenance_choice.item_count - 1
+		_maintenance_choice.set_item_metadata(index, building.id)
+		if building.id == selected_maintenance_id or (selected_maintenance_id.is_empty() and building.id == _inspected_id):
+			maintenance_index = index
+		maintenance_lines.append("%s: %s · edad %ds · intentos %d" % [building.id, building.maintenance.state, building.maintenance.age_seconds, building.maintenance.attempts])
+	if maintenance_index < 0 and _maintenance_choice.item_count > 0:
+		maintenance_index = 0
+	if maintenance_index >= 0:
+		_maintenance_choice.select(maintenance_index)
+	_maintenance_status.text = " | ".join(maintenance_lines) if not maintenance_lines.is_empty() else "Construye un reactor u oxigenador para habilitar mantenimiento."
+
+	var inspection: Dictionary = simulation.get_building_status(_inspected_id)
+	if inspection.ok:
+		var status: Dictionary = inspection.result
+		_inspector.text = "%s · %s · Nivel %d\nPotencia: %.1f / demanda %.1f\nAire %.1f y comida %.1f por sol · agua %.1f por sol\nEstado: %s · aviso: %s" % [status.id, BUILDING_NAMES.get(status.kind, status.kind), status.level, status.power_output, status.power_demand, status.effective_production_per_sol.air, status.effective_production_per_sol.food, status.water_demand_per_sol, "energizado" if status.powered else "sin potencia", status.warning if status.warning != "" else "ninguno"]
+		_inspected_power_button.disabled = status.kind == "habitat" or snapshot.get("phase") == "finished"
+		_inspected_power_button.text = "Apagar %s" % BUILDING_NAMES.get(status.kind, status.kind) if status.enabled else "Encender %s" % BUILDING_NAMES.get(status.kind, status.kind)
+		var history: PackedStringArray = ["Historial: %s" % status.id]
+		for entry: Dictionary in status.local_log:
+			history.append("%ss · %s · %s" % [entry.seconds, entry.reason, str(entry.details)])
+		_building_history.update_history("\n".join(history), new_run or _history_building != status.id)
+		_history_building = status.id
+	else:
+		_inspector.text = "Selecciona una construcción en el tablero para ver sus datos."
+		_inspected_power_button.disabled = true
+		_inspected_power_button.text = "Sin edificio seleccionado"
+		_building_history.update_history("Selecciona una construcción para consultar sus últimos hechos.", new_run)
+
+	var reports: Array = snapshot.get("sol_reports", [])
+	if reports.is_empty():
+		_report_status.text = "Aún no hay un sol completo; el informe se actualiza al final de cada sol."
+	else:
+		var report_lines: PackedStringArray = []
+		for report: Dictionary in reports:
+			report_lines.append("Sol %s%s · Δ reservas %s\nProducción %s · consumo %s · importaciones %s\nDéficits %s · bloqueos %s" % [report.get("sol", "?"), " (parcial)" if report.get("partial", false) else "", str(report.get("delta", {})), str(report.get("production", {})), str(report.get("consumption", {})), str(report.get("imports", {})), str(report.get("deficits", {})), str(report.get("blocked_seconds", {}))])
+		_report_status.text = "\n\n".join(report_lines)
 
 func _create_building_label() -> Label3D:
 	var label := Label3D.new()

@@ -6,6 +6,7 @@ test-results/
 # Material personal y referencias fuera del repositorio del equipo.
 /local-only/
 /.agents/
+/.obsidian/
 
 # Carpetas locales del editor, si vuelven a generarse en la raíz.
 /export_templates/

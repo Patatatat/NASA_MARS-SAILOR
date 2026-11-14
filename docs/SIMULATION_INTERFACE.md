@@ -1,4 +1,4 @@
-# Contrato inicial de simulación · v1
+# Contrato de simulación · interfaz integrada
 
 Esta guía corresponde al código ejecutable de la base inicial. El plan vigente y el diseño v0.4 orientan el alcance; `local-only/Especificaciones/00-main-handoff.md` y `01-interface-guide.md` son referencias históricas locales, no incluidas en el repositorio. No se cargan sus JSON. Este incremento no completa el juego del fin de semana.
 
@@ -21,10 +21,21 @@ No requiere autoloads. La instancia es un `RefCounted` independiente de escenas.
 | `set_paused(paused: bool)` | Solo durante simulación. |
 | `set_speed(speed: float)` | 0.5, 1, 2 o 4. |
 | `advance(real_seconds: float)` | Delta real finito, no negativo. Pasos lógicos de 1 segundo. |
+| `get_forecast()` | Configuración pública de probabilidades, avisos y horarios; disponible después de configurar, antes de seleccionar equipo. No revela tiradas. |
+| `preview_robert(robert_id: String, destination_id: String)` | Requisitos actuales, potencia reservada, duración, carga y riesgo estimado; no muta. |
+| `send_robert(robert_id: String, destination_id: String)` | Revalida y despacha una misión; devuelve ID y segundo de retorno. |
+| `set_sheltered(enabled: bool)` | Refugio: reduce dosis futura, detiene obras/enterramiento y bloquea nuevas expediciones. |
+| `bury_habitat()` | Cobra masa y regolito al iniciar; protección al terminar. Sin cancelación. |
+| `preview_upgrade(building_id: String)` | Valida y devuelve costo, duración estimada, duración base, definición actual y definición del nivel 2, sin mutación. |
+| `start_upgrade(building_id: String)` | Revalida, cobra masa una vez e inicia trabajo. Mantiene nivel 1 durante la obra. |
+| `get_building_status(building_id: String)` | Respuesta `{ok, error_code, cost, result}` con inspector e historial local; copia profunda. |
+| `begin_maintenance(building_id: String)` | Abre un intento y devuelve datos/token del minijuego. |
+| `apply_maintenance_result(session_id: String, success: bool, elapsed_seconds: float, abandoned: bool = false)` | Aplica una sola vez el resultado de ese intento. |
+| `reactivate_building(building_id: String)` | Después del enfriamiento, cobra masa y recupera rendimiento normal. |
 
 Los comandos retornan `{ok, error_code, cost, result}`. Un fallo no muta. Códigos principales: `select_four`, `invalid_crew`, `invalid_phase`, `invalid_building`, `outside_grid`, `footprint_outside_grid`, `occupied_footprint`, `reactor_too_close`, `insufficient_mass`, `unknown_building`, `habitat_required`, `invalid_speed`, `invalid_delta`, `busy`.
 
-Señales: `state_updated(snapshot)` después de una operación completa y `run_finished(result)` una sola vez por partida. No llamar comandos síncronos desde estas señales: se rechazan para evitar reentrada. Encolar la intención para el siguiente frame. No modificar el payload compartido entre suscriptores; obtener otra copia si se necesita manipularlo.
+Señales: `state_updated(snapshot)` después de una operación completa, `event_changed(event)` para aviso/inicio/fin/ausencia de evento, `robert_changed(robert)` para salida/retorno/pérdida y `run_finished(result)` una sola vez por partida. No llamar comandos síncronos desde estas señales: se rechazan para evitar reentrada. Encolar la intención para el siguiente frame. No modificar el payload compartido entre suscriptores; obtener otra copia si se necesita manipularlo. Con un frame largo, las notificaciones de transiciones se entregan en orden al finalizar `advance`: sus payloads son históricos, el snapshot es el estado actual. Usar timestamps del evento y el registro para cronología.
 
 Snapshot: fase (`planning`, `running`, `finished`), semilla, segundos enteros, sol mostrado (1–12), soles completados (0–12), pausa, velocidad, recursos, tripulación, edificios, potencia, déficits acumulados, registro y resultado. Cada edificio tiene ID, tipo, x/y, nivel 1, habilitación, potencia, tiempo restante y aviso. Los IDs se reinician con la partida; descartar referencias de la sesión anterior.
 
@@ -34,24 +45,112 @@ Snapshot: fase (`planning`, `running`, `finished`), semilla, segundos enteros, s
 - El HUD muestra `Energía` como suministro eléctrico disponible / demanda eléctrica, no como una reserva acumulable. `Soles transcurridos` muestra `completed_sols`: inicia en 0 y aumenta al completar cada día marciano simulado.
 - Configuración nominal: 12 soles × 25 segundos. Datos numéricos provisionales en `data/balance.json`; validación estructural, tipos numéricos finitos y no negativos. Los valores de duración de sol y construcción son enteros. Grid fijo 32×32.
 - Huellas cuadradas: hábitat 3×3, solar 3×3, reactor 4×4, generador de oxígeno 2×2, invernadero 3×3 y laboratorio 2×2. Los edificios no pueden solapar huellas ni salir del tablero; las huellas que solo comparten borde sí pueden tocarse. En medidas pares, la celda ancla es la primera de las dos centrales y la extensión sobrante queda hacia +X/+Y. El hábitat empieza en (15,15). Se conserva la distancia Manhattan mínima 2 para el reactor. Construir paga al ordenar; durante planificación los temporizadores están detenidos. Al iniciar, una obra de 5 segundos termina al final del tick 5 y produce desde el 6. No hay cancelación ni reembolso.
-- Prioridad eléctrica provisional: hábitat → oxígeno → invernadero → laboratorio; empates por orden de construcción. Cada consumidor requiere toda su potencia. Las fuentes no necesitan potencia. No hay noche ni tormentas aún.
-- Orden por segundo: resolver potencia → producción (riego antes del consumo de la tripulación) → consumos separados → registrar faltantes y daño → muerte → completar obras → actualizar soles → recalcular potencia/bonus → evaluar final.
+- Prioridad eléctrica provisional: hábitat → oxígeno → invernadero → laboratorio → ROBERTS; empates por orden de construcción/ID de robot. Cada consumidor requiere toda su potencia. Las fuentes no necesitan potencia. No hay noche ni baterías.
+- Orden por segundo: transiciones de eventos → avisos/degradación/apagado de mantenimiento → potencia → producción (riego antes del consumo de la tripulación) → consumos separados → faltantes/daño/muerte → radiación/daño/muerte → obras/mejoras/enterramiento → retorno de ROBERTS → soles/resumen → recalcular potencia/bonus → final. Un retorno no salva a un tripulante muerto durante el consumo del mismo paso. Sí cuenta para el inventario final al coincidir con el relevo. El reloj real de sesiones se procesa también en fracciones de un paso simulado, respetando cada transición de evento.
 - Conversión de tasas: `cantidad_por_sol / sol_seconds`. Invernadero sin agua suficiente para el paso no produce ni cobra riego. Falta de potencia detiene producción. Producción precede al consumo y puede cubrirlo en el mismo paso.
 - Daño provisional por cada recurso: unidades faltantes × tasa de daño / vivos al comenzar el consumo. La salud se reduce por igual entre vivos. Muertos dejan de consumir y aportar bonus desde el próximo paso; potencia recalculada inmediatamente.
-- Bonus implementados: ingeniería ×1.2 suministro, botánica ×1.25 aire/comida del invernadero, sistemas ×0.8 demanda del generador. Medicina, ciencia y geología son seleccionables **sin efecto todavía**; requieren sus sistemas posteriores.
+- Bonus implementados: ingeniería ×1.2 suministro, botánica ×1.25 aire/comida del invernadero, sistemas ×0.8 demanda del generador, medicina ×0.75 dosis futura, geología ×1.25 carga y ×0.75 riesgo, ciencia ×0.75 duración de mejora. Solo miembros vivos aportan bonus.
 - Final: cero vivos → `total_defeat` (prioridad incluso al coincidir con relevo); a 300 s, vivos + hábitat energizado + aire positivo → `relief_achieved`; en otro caso `partial_defeat`. Definición inicial explícita de soporte operativo: hábitat energizado. No calcula puntaje.
-- El tiempo fraccionario se acumula internamente; `get_snapshot()` no es un formato de guardado/restauración. Semilla registrada, sin sorteos aún. No se promete reproducibilidad entre versiones del motor.
+- El tiempo fraccionario se acumula internamente; `get_snapshot()` no es un formato de guardado/restauración. Dos RNG separados: eventos con la semilla de partida y misiones con semilla XOR `0x524F4245`; se pueden inyectar RNG distintos en el constructor. `reset_run` reinicia ambos y elimina misiones/avisos anteriores. Eventos se sortean al reiniciar, antes de decisiones, usando exactamente las probabilidades del pronóstico. No se promete reproducibilidad entre versiones del motor; requiere los mismos datos y acciones.
+
+## Eventos, radiación y expediciones
+
+Configuración provisional en `balance.json`, sin cambiar costos ni reservas originales:
+
+- Tormenta: 60%, aviso en 55 s, activa en `[75,125)`, solar ×0.25; reactor inmune. Partículas: 50%, aviso en 155 s, activas en `[175,200)`, +35 dosis/sol. Intervalos en segundos simulados. Config rechaza solapamiento de avisos/crisis. Horarios fijos en este incremento; se sortea ocurrencia, no fecha. Al omitirse un evento se notifica `skipped` al llegar su ventana de aviso.
+- `snapshot.event`: vacío o `{kind, state, start_seconds, end_seconds, seconds}`. `forecast` no contiene resultados ocultos. Estados públicos `warning`, `active`; los payloads de señal incluyen también `ended`/`skipped`.
+- Dosis individual acumulativa: ambiente 1/sol más partículas si activas. Médico ×0.75, refugio ×0.25 y hábitat enterrado ×0.4, multiplicativos. `crew[].dose_avoided` mide dosis reducida frente al incremento bruto de ese paso; no demuestra una muerte evitada. Daño: 2 salud por unidad NUEVA de dosis que supere 40. Cifras abstractas de juego, sin interpretación médica.
+- Enterrar: 10 masa + 20 regolito, 25 s efectivos de trabajo. `burial.state`: `surface`, `building`, `buried`. Refugio pausa construcción y enterramiento; producción automática y viajes ya iniciados continúan. La protección empieza en el paso siguiente a terminar la obra; la dosis pasada nunca disminuye.
+- IDs de robots: `robert_1`, `robert_2`. Destinos: `ice` → 45 agua, riesgo base 15%; `quarry` → 25 regolito, 5%; `wreckage` → 20 masa, 25%. Hielo se convierte directamente en agua, sin procesamiento avanzado.
+- Requisitos de salida: fase running, robot disponible, no estar refugiados, laboratorio terminado/habilitado/energizado y 2 de potencia sobrante. Se reservan 2 de demanda **durante el viaje**, sin descontar energía de un inventario. Cada misión dura dos soles, 50 s con el balance nominal. No exige fecha de retorno anterior al relevo: si termina la partida primero no entrega carga después.
+- Regla provisional de autonomía: perder energía de soporte o apagar laboratorio después de salir no detiene ni reinicia el viaje; `robert.powered` muestra si la base cubre su demanda. No introduce un segundo castigo por apagado. Vuelve y convierte carga automáticamente aunque el laboratorio esté apagado.
+- Cualquier paso de viaje que coincida con tormenta marca `storm_exposed` (incluido el paso del retorno). Al retornar se realiza UNA tirada con `clamp((riesgo_base + 0.25 si hubo tormenta) × bonus_geólogo, 0, 1)`. Geólogo vivo al retorno determina riesgo y carga; la vista previa es estimativa y puede cambiar por tormenta/muerte. La exposición no acumula 25% por segundo.
+- `roberts[]` contiene `id`, `state` (`available`, `on_mission`, `lost`), `mission_id`, `destination`, `return_seconds`, `storm_exposed`, `powered`. Tras retorno conserva los datos de la última misión para inspección. Un robot perdido no se reutiliza; uno disponible admite una nueva misión con ID nuevo. El reinicio restablece los dos.
+- Nuevos errores: `unknown_robert`, `robert_unavailable`, `unknown_destination`, `crew_sheltered`, `laboratory_not_operational`, `insufficient_power`, `burial_already_started`, `insufficient_resources`. En salidas, `cost.power_demand` representa tasa reservada; en enterramiento `cost.mass/regolith` son cantidades pagadas.
+
+Registro adicional: transiciones `event_*`, `robert_dispatched/returned/lost` con ID de misión, riesgo resuelto y carga real, `shelter_changed`, `burial_paid`, `habitat_buried`, `radiation_exposure`. `metrics.solar_output_lost_power_seconds` integra la reducción real de suministro solar por tormenta; no es energía almacenada ni producción de aire perdida.
 
 Registro causal: `id`, `seconds`, `reason`, `target`, `details`. Incluye pago, terminación, encendido, déficit medido, producción bloqueada por agua, muerte y final. No basta para calcular todavía todos los componentes del informe final. No inferir muertes hipotéticas o consecuencias no medidas.
 
-## Próximos contratos / Luque
+## Mejoras de nivel 1 → 2
 
-`start_upgrade`, `send_robert`, `bury_habitat` y `apply_maintenance_result` **no existen aún**. Tampoco hay pronóstico, eventos, dosis, refugio ni mantenimiento. No conectar botones de esos sistemas a descuentos locales.
+Disponibles durante `running` para los cinco edificios construibles. El hábitat se protege mediante enterramiento. Los datos `upgrades` y `scientist_upgrade_duration_multiplier` son obligatorios y se validan al cargar; no alteran los costos/tasas anteriores de nivel 1.
 
-El contrato de Luque del plan sigue como objetivo: escena Godot con `iniciar(building_id, dificultad)` y señal `resultado(success, elapsed_seconds)`. Antes de integrarlo se implementarán sesiones de mantenimiento con ID único, validación del objetivo y consumo del resultado una sola vez. Esta base no aplica premios ni penalizaciones falsos para simular esa integración.
+| Edificio | Masa | Trabajo base (s) | Efecto de nivel 2, antes de bonus |
+| --- | --- | --- | --- |
+| Solar | 10 | 20 | Potencia 5 → 8 |
+| Reactor | 25 | 25 | Potencia 14 → 20 |
+| Oxígeno | 15 | 20 | Aire 12 → 18/sol; demanda 4 → 5 |
+| Invernadero | 15 | 25 | Comida 10 → 15/sol; aire 2 → 3/sol; agua 4 → 6/sol; demanda 3 → 4 |
+| Laboratorio | 10 | 20 | Demanda 2 → 1; viajes y conversión inmediata conservan sus reglas |
+
+Reglas provisionales:
+
+- `preview_upgrade` retorna costo y `result.{target_level, duration_seconds, base_duration_seconds, current, next}`. La estimación asume que el científico sigue vivo y no se entra al refugio. La UI debe mostrar también la demanda/insumos del nuevo nivel para anticipar los costos operativos.
+- `start_upgrade` comprueba objetivo, obra inicial terminada, nivel máximo, mejora en curso, refugio y masa. Cobra al ordenar y no devuelve recursos. Repetir la orden rechaza sin cobrar. Puede mejorarse un edificio apagado/sin potencia; la obra no lo enciende.
+- Mientras hay mejora, producción, consumo y laboratorio continúan con nivel 1. Al finalizar cambia `level` a 2, recalcula potencia y la nueva economía aplica desde el siguiente paso. El último paso de obra sigue produciendo a nivel 1. La mejora no extiende la partida.
+- Cada edificio contiene `upgrade_remaining_work` y `upgrade_total_work`, en segundos equivalentes de trabajo base. Ambos empiezan en cero. Progreso de UI: `1 - remaining / total` si total > 0. Tras finalizar, remaining=0 y level=2; total conserva el trabajo contratado para inspección.
+- Científico vivo aporta `1 / 0.75` unidades de trabajo por segundo; sin él, 1. Por pasos enteros, 20 s base duran 15 s con científico, 25 s duran 19 s. El bonus se recalcula después de muertes en cada paso; morir no reinicia ni ralentiza retroactivamente lo ya hecho. No acelera construcción inicial ni enterramiento.
+- Pausa global y refugio detienen la mejora. Apagar el edificio no detiene su obra. Cero potencia tampoco detiene este trabajo; no hay costo eléctrico de construcción en esta regla.
+- `upgrade_paid` y `upgrade_completed` se registran una vez por mejora. `metrics.scientist_extra_upgrade_work` suma trabajo adicional realmente realizado, no una estimación de vidas/producción salvadas. `state_updated` basta para conectar progreso y nivel; no hay una señal nueva obligatoria.
+- Nuevos errores: `upgrade_not_supported`, `building_under_construction`, `max_level`, `upgrade_in_progress`; reutiliza `invalid_phase`, `unknown_building`, `crew_sheltered`, `insufficient_mass`, `busy`.
+
+## Diagnóstico de reutilización de ROBERTS
+
+La reutilización después de retornar está permitida. Se comprobó el mismo robot en tres misiones consecutivas con carga (tres IDs distintos y 75 regolito). Este caso ya pasaba antes de cambiar la pantalla: no se encontró un bloqueo permanente del dominio.
+
+Reproducción de un bloqueo condicional: solar + laboratorio, salida a los 10 s, retorno a los 60 s; en 60 s puede volver a salir. Si espera hasta los 75 s y ocurre tormenta, la potencia solar baja a 1.5 con ingeniero, y el hábitat consume 1: el laboratorio queda sin energía. El robot conserva estado `available`, pero `send_robert` rechaza con `laboratory_not_operational`. Al terminar la tormenta, vuelve a permitir salida sin reiniciar ni recrear el robot.
+
+El reporte manual solo indicó un posible mensaje «inválido», insuficiente para asociarlo a esa reproducción. También `invalid_phase` bloquea salidas después del relevo/derrota, y `crew_sheltered` bloquea si sigue el refugio. La escena técnica ahora muestra la causa actual de bloqueo en español y, para un robot disponible, no muestra la potencia de soporte ni el horario vencido de su viaje anterior. No se cambió el balance de ROBERTS para ocultar el síntoma.
+
+## Mantenimiento y conexión con Luque
+
+Reglas de alcance vigente (no son las reparaciones de túneles del handoff):
+
+- Solo reactor y generador de oxígeno solicitan mantenimiento. Primer aviso a cuatro soles de terminar la construcción; la medición se inicia en su primer paso ya construido. Tras éxito o reactivación, el siguiente aviso vence cuatro soles después. Edificios apagados no crean avisos nuevos; un aviso existente sigue envejeciendo aunque se apague el edificio.
+- Máximo dos avisos pendientes (`requested`/`degraded`), separados globalmente al menos 25 s simulados. No aparecen nuevos durante `warning`/`active` de eventos. El tercero espera capacidad sin fabricar otro temporizador ni avisos duplicados.
+- Ignorar un aviso durante un sol reduce producción al 70%; dos soles lo apagan. La demanda del oxígeno y su costo operativo no se reducen por degradación. Un edificio apagado por mantenimiento no produce ni demanda potencia y no se recupera mediante `set_enabled` ni mejoras.
+- Apagado: enfriamiento de dos soles. Después, `reactivate_building` cobra 5 masa una vez, devuelve condición `healthy` y respeta la habilitación manual del edificio. No enciende uno que el jugador hubiera deshabilitado. Las cifras están en `balance.json.maintenance` y son provisionales.
+- Una única sesión de minijuego simultánea, hasta dos intentos y **15 segundos reales activos en total**, compartidos por ambos intentos. El límite no cambia con ×0.5/×4 y también vence entre ticks de economía. Pausa global detiene ambos relojes. El edificio continúa operando con su condición vigente durante la sesión; el resto del juego sigue avanzando.
+- Aviso/crisis o refugio suspenden sesión y reloj real; al terminar, se reanuda con el mismo token, intentos y tiempo. Atender un aviso congela su edad mientras la sesión siga activa/suspendida, evitando un apagado automático durante los 15 segundos del minijuego. Después de fallo/abandono/timeout, la edad sigue. Un resultado recibido durante suspensión se rechaza sin consumirlo.
+- Si hay al menos un ROBERT disponible al abrir el intento: `robot_support=true`, dificultad ×0.8. Ambos fuera/perdidos: ×1. Ese dato queda fijado para el intento, no cambia los resultados ni agrega premios. Luque decide cómo convertir ese multiplicador en tolerancia/dificultad de sus escenas.
+
+Cada edificio incorpora `maintenance`:
+
+```text
+state: healthy | requested | degraded | shutdown
+next_due_seconds, request_id, age_seconds, shutdown_until
+attempts, elapsed_real_seconds
+session: {} o {id, state, building_id, minigame_id, robot_support, difficulty_multiplier}
+session.state: active | suspended | success | failure | abandoned | timeout | interrupted_shutdown
+```
+
+`begin_maintenance` devuelve la sesión en `result`. IDs de minijuego: `load_balance` (reactor) y `oxygen_reaction` (oxígeno). La sesión incluye identificador de partida, solicitud e intento: un callback anterior al reinicio no coincide con el nuevo. Repetir apertura no crea otra sesión; repetir un resultado no aplica cambios. El snapshot conserva la última sesión cerrada para inspección.
+
+**Adaptador que debe hacer Andrés:** abrir con `begin_maintenance(building_id)`; guardar el token devuelto para ese intento; instanciar la escena de Luque; conectar su señal y llamar `iniciar(building_id, dificultad)`. Al recibir `resultado(success, elapsed_seconds)`, llamar `apply_maintenance_result(token, success, tiempo_activo_total_de_la_sesion)`. Para un segundo intento, sumar el tiempo activo del intento previo al que devuelve Luque. El dominio también cuenta tiempo real: conserva el mayor entre su medición y el tiempo reportado, validando que sea finito y de 0 a 15. Cerrar manualmente llama con `success=false, abandoned=true`.
+
+Escuchar `maintenance_changed(change)` para mostrar avisos, suspender/reanudar la escena y actualizar estado. `change` contiene `reason`, `target` (ID de edificio), `seconds`, `maintenance` y `details`. Para suspensión, pausar/reanudar el minijuego conservando su estado; no enviar un abandono. Si cambia `run_generation` o termina la partida, cerrar la escena y descartar sus callbacks. No llamar comandos síncronos dentro de señales del dominio: encolar para el siguiente frame.
+
+La escena técnica tiene botones **Prueba: éxito/fallo**, que permiten ejercitar este contrato; no sustituyen los dos minijuegos de Luque. El sistema no calcula puntaje ni entrega recursos por mantenimiento: éxito restaura condición/producción y registra el hecho.
+
+Errores adicionales: `maintenance_not_pending`, `maintenance_session_active`, `another_maintenance_active`, `maintenance_attempts_exhausted`, `maintenance_suspended`, `invalid_maintenance_result`, `unknown_maintenance_session`, `maintenance_result_already_closed`, `maintenance_not_shutdown`, `maintenance_cooling_down`; reutiliza `unknown_building`, `invalid_phase`, `insufficient_mass`.
+
+## Inspector y resumen por sol para Andrés
+
+`get_building_status(id).result` incluye estado del edificio, definición de su nivel, `power_output`, `power_demand`, `output_multiplier`, `effective_production_per_sol.{air,food}`, `water_demand_per_sol`, evento activo, mantenimiento, progreso, `local_log` y `blocked_this_sol`. Las tasas efectivas representan operación posible en el estado actual (cero si no está energizado o falta agua). Son unidades abstractas, no vatios medidos. `local_log` filtra los hechos cuyo `target` es el edificio; los eventos globales se consultan aparte. No inventa una salud estructural que la simulación no tiene.
+
+El snapshot incorpora `sol_reports` y `current_sol_report`. `sol_report_ready(report)` se emite al completar cada sol y por un último tramo parcial si hay derrota anticipada. Nunca vuelve a emitirse después del final. Con un frame largo se entregan todos los informes en orden. No se pausa automáticamente ni se elige una decisión por el usuario.
+
+Cada resumen contiene `sol`, `start_seconds`, `end_seconds`, `partial`, reservas `opening/closing/delta`, `production`, `consumption`, `requested_consumption`, `deficits`, `imports`, `blocked_seconds` y `fact_ids`. Diccionarios de cantidades: claves ausentes equivalen a cero. Producción/consumo se miden por paso; consumo incluye riego y cantidad realmente disponible para tripulación, mientras `requested_consumption` mide necesidades solicitadas por la tripulación. `deficits` registra faltantes antes de limitar inventario. `imports` registra retornos de ROBERTS. Para aire/agua/comida: variación = producción + importación − consumo real. Masa/regolito también cambian por comandos cuyos pagos constan en el registro; no usar esa igualdad para ellos sin incluir las transacciones.
+
+`blocked_seconds[building_id][reason]` cuenta pasos reales de paro por `under_construction`, `disabled`, `power_shortage`, `maintenance_shutdown` o `water_shortage`. No convierte automáticamente esas duraciones en cosechas perdidas ni muertes hipotéticas. `fact_ids` enlaza al registro de hechos; Andrés puede redactar hasta tres causas respaldadas, por ejemplo «el invernadero estuvo sin agua 15 segundos». No se generaron explicaciones desde el stock final solamente.
+
+El handoff antiguo aporta separación de UI/dominio, inspector y explicación causal. No se trasladaron 42 soles, cohetes, túneles, baterías, moral, escaneo, ocho perfiles ni los tres templates antiguos de Decision Maker. Los minijuegos y el diseño visual de los avisos siguen a cargo de sus carriles; este incremento deja los contratos de simulación utilizables.
+
+Para historiales de UI, `scenes/history_panel.gd` es un `TextEdit` de lectura con `update_history(content, reset_position=false)`: conserva desplazamiento al recibir datos y retiene la rueda dentro del panel. La escena técnica lo usa para los hechos globales y para el historial del inspector. Reinicia posición únicamente al cambiar de partida/edificio; el contrato del dominio no cambió con esta corrección.
 
 ## Integración en el repositorio del equipo
 
-Este directorio no era un repositorio Git. No se creó uno ni se hizo commit/push. Al integrar, conservar los `.gd.uid` generados y copiar `domain/`, `data/balance.json`, `tests/` y esta guía. La escena técnica es opcional. Andrés debe combinar el `project.godot` con el suyo; no sobrescribir su escena principal. Ignorar `.godot/`, `test-results/` y archivos temporales.
+Al integrar, conservar los `.gd.uid` generados y los cambios en `domain/`, `data/balance.json`, `tests/` y esta guía. La escena técnica es opcional. Andrés debe combinar el `project.godot` con el suyo; no sobrescribir su escena principal. Ignorar `.godot/`, `local-only/` y archivos temporales. Este incremento no hace commit ni push.
 
 Los directorios `skills-rafael/`, `skills-equipo/` y `Especificaciones/` se conservan dentro de `local-only/`, junto con planes personales y resultados de pruebas. Esta carpeta y `.agents/` están excluidas mediante `.gitignore`. No enviar logs, preferencias del motor ni cachés generados.

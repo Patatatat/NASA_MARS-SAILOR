@@ -9,6 +9,36 @@
   "engineer_multiplier": 1.2,
   "botanist_multiplier": 1.25,
   "technician_multiplier": 0.8,
+  "scientist_upgrade_duration_multiplier": 0.75,
+  "maintenance": {
+    "interval_sols": 4, "global_gap_seconds": 25, "max_pending": 2,
+    "degrade_after_sols": 1, "shutdown_after_sols": 2, "shutdown_duration_sols": 2,
+    "degraded_multiplier": 0.7, "reactivation_mass": 5,
+    "session_max_real_seconds": 15, "max_attempts": 2, "robot_difficulty_multiplier": 0.8
+  },
+  "upgrades": {
+    "solar": {"mass": 10, "duration_seconds": 20, "power_supply": 8, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0},
+    "reactor": {"mass": 25, "duration_seconds": 25, "power_supply": 20, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0},
+    "oxygen_generator": {"mass": 15, "duration_seconds": 20, "power_supply": 0, "power_demand": 5, "air_per_sol": 18, "food_per_sol": 0, "water_per_sol": 0},
+    "greenhouse": {"mass": 15, "duration_seconds": 25, "power_supply": 0, "power_demand": 4, "air_per_sol": 3, "food_per_sol": 15, "water_per_sol": 6},
+    "laboratory": {"mass": 10, "duration_seconds": 20, "power_supply": 0, "power_demand": 1, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0}
+  },
+  "events": {
+    "warning_seconds": 20,
+    "storm": {"probability": 0.6, "start_seconds": 75, "duration_seconds": 50, "solar_multiplier": 0.25},
+    "solar_particles": {"probability": 0.5, "start_seconds": 175, "duration_seconds": 25, "dose_per_sol": 35}
+  },
+  "radiation": {"ambient_dose_per_sol": 1, "medic_multiplier": 0.75, "shelter_multiplier": 0.25, "buried_multiplier": 0.4, "damage_threshold": 40, "health_loss_per_dose": 2,
+    "bury_mass": 10, "bury_regolith": 20, "bury_seconds": 25},
+  "roberts": {
+    "duration_sols": 2, "power_demand": 2, "storm_loss_probability": 0.25,
+    "geologist_yield_multiplier": 1.25, "geologist_risk_multiplier": 0.75,
+    "destinations": {
+      "ice": {"resource": "water", "amount": 45, "loss_probability": 0.15},
+      "quarry": {"resource": "regolith", "amount": 25, "loss_probability": 0.05},
+      "wreckage": {"resource": "mass", "amount": 20, "loss_probability": 0.25}
+    }
+  },
   "buildings": {
     "habitat": {"mass": 0, "build_seconds": 0, "power_supply": 0, "power_demand": 1, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0},
     "solar": {"mass": 15, "build_seconds": 5, "power_supply": 5, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0},
