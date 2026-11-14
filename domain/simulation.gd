@@ -7,6 +7,14 @@ signal run_finished(result: Dictionary)
 const Config = preload("res://domain/simulation_config.gd")
 const SPECIALISTS := ["engineer", "medic", "botanist", "scientist", "geologist", "technician"]
 const POWER_ORDER := ["habitat", "oxygen_generator", "greenhouse", "laboratory", "solar", "reactor"]
+const BUILDING_FOOTPRINTS := {
+	"habitat": 3,
+	"solar": 3,
+	"reactor": 4,
+	"oxygen_generator": 2,
+	"greenhouse": 3,
+	"laboratory": 2
+}
 
 var _config: Dictionary = {}
 var _state: Dictionary = {}
@@ -43,7 +51,8 @@ func reset_run(crew_ids: Array, run_seed: int = 1) -> Dictionary:
 		"deficits": {"air": 0.0, "water": 0.0, "food": 0.0}, "log": [], "result": {}}
 	_accumulator = 0.0
 	_finished_emitted = false
-	_state.buildings.append(_building("b1", "habitat", Vector2i(2, 2), 0))
+	var habitat_center := int((_config.grid_size - 1) / 2)
+	_state.buildings.append(_building("b1", "habitat", Vector2i(habitat_center, habitat_center), 0))
 	_resolve_power()
 	_publish()
 	return _reply(true)
@@ -53,6 +62,22 @@ func get_snapshot() -> Dictionary:
 
 func get_catalog() -> Dictionary:
 	return _config.duplicate(true)
+
+func get_building_footprint_size(kind: String) -> int:
+	return int(BUILDING_FOOTPRINTS.get(kind, 0))
+
+func get_building_footprint_cells(kind: String, anchor: Vector2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var size := get_building_footprint_size(kind)
+	if size <= 0:
+		return cells
+	# Para medidas pares, el ancla es la celda superior izquierda de las dos centrales.
+	# El espacio adicional queda hacia +X/+Y para que la regla sea estable en toda la malla.
+	var first_offset := -floori(float(size - 1) / 2.0)
+	for y: int in range(first_offset, first_offset + size):
+		for x: int in range(first_offset, first_offset + size):
+			cells.append(anchor + Vector2i(x, y))
+	return cells
 
 func start_run() -> Dictionary:
 	if _publishing or _state.get("phase") != "planning":
@@ -69,11 +94,25 @@ func preview_placement(kind: String, cell: Vector2i) -> Dictionary:
 		return _reply(false, "invalid_building")
 	if cell.x < 0 or cell.y < 0 or cell.x >= _config.grid_size or cell.y >= _config.grid_size:
 		return _reply(false, "outside_grid")
+	if kind == "reactor":
+		var habitat: Dictionary = _state.buildings[0]
+		if absi(cell.x - int(habitat.x)) + absi(cell.y - int(habitat.y)) < 2:
+			return _reply(false, "reactor_too_close")
+	var proposed_cells := get_building_footprint_cells(kind, cell)
+	for proposed_cell: Vector2i in proposed_cells:
+		if proposed_cell.x < 0 or proposed_cell.y < 0 or proposed_cell.x >= _config.grid_size or proposed_cell.y >= _config.grid_size:
+			return _reply(false, "footprint_outside_grid")
+	var occupied_cells: Dictionary = {}
 	for building: Dictionary in _state.buildings:
-		if building.x == cell.x and building.y == cell.y:
-			return _reply(false, "occupied_cell")
-	if kind == "reactor" and absi(cell.x - 2) + absi(cell.y - 2) < 2:
-		return _reply(false, "reactor_too_close")
+		var existing_anchor := Vector2i(int(building.x), int(building.y))
+		for occupied_cell: Vector2i in get_building_footprint_cells(str(building.kind), existing_anchor):
+			occupied_cells[occupied_cell] = building.id
+	for proposed_cell: Vector2i in proposed_cells:
+		if occupied_cells.has(proposed_cell):
+			return _reply(false, "occupied_footprint", {}, {
+				"blocking_building": occupied_cells[proposed_cell],
+				"cell": {"x": proposed_cell.x, "y": proposed_cell.y}
+			})
 	var cost := {"mass": float(_config.buildings[kind].mass)}
 	if _state.resources.mass < cost.mass:
 		return _reply(false, "insufficient_mass", cost)

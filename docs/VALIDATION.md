@@ -4,6 +4,8 @@ Fecha: 14 de noviembre de 2026. Motor real: `4.7.2.stable.official.ed1daf0bf` (c
 
 Resultado: **89 comprobaciones, 0 fallos**; importación y escena headless aprobadas.
 
+Nota de alcance: ese resultado corresponde a la base 2D validada en esta fecha. Las actualizaciones posteriores crean una escena separada para elegir cuatro especialistas y una malla isométrica 3D de 32×32 con giro y zoom. La simulación recibe los mismos IDs de especialistas, por lo que conserva sus efectos. El tablero muestra un HUD de recursos, suministro/demanda de energía y soles transcurridos, y reserva huellas de 3×3 para hábitat/solar/invernadero, 4×4 para reactor y 2×2 para generador de oxígeno/laboratorio. La ocupación impide solapamientos y huellas fuera del tablero; las casillas reservadas se distinguen en la vista. La subvista 3D ahora renderiza a 2× el tamaño visible con MSAA 4×, y las etiquetas usan una textura de fuente de mayor resolución. Los 89 casos aún no se han vuelto a ejecutar sobre estas actualizaciones; el flujo de escenas y la presentación en ventana siguen pendientes de comprobación manual. En este entorno no se encontraron Godot ni PowerShell para ejecutar el runner.
+
 Comando ejecutado desde la raíz:
 
 ```powershell
