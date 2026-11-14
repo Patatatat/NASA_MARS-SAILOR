@@ -4,10 +4,9 @@ extends Control
 const Simulation = preload("res://domain/simulation.gd")
 const Config = preload("res://domain/simulation_config.gd")
 const HistoryPanel = preload("res://scenes/history_panel.gd")
+const SettingsManagerScript = preload("res://scripts/settings_manager.gd")
 const CREW_SELECTION_SCENE := "res://scenes/crew_selection.tscn"
 const SELECTED_CREW_META := "mars_selected_crew_ids"
-const SOUND_VALUES_META := "mars_sound_percentages"
-const DEFAULT_SOUND_VALUES: Dictionary = {"master": 0, "music": 0, "sfx": 0}
 const CREW_IDS := ["engineer", "medic", "botanist", "scientist", "geologist", "technician"]
 const CREW_NAMES := {
 	"engineer": "Ingeniería",
@@ -73,8 +72,12 @@ var _speed_button: Button
 var _speed_menu: PanelContainer
 var _sound_menu: PanelContainer
 var _sound_option_title: Label
+var _settings_page_body: VBoxContainer
+var _settings_page_index: int = 0
+var _fullscreen_toggle: CheckBox
+var _resolution_option: OptionButton
+var _language_option: OptionButton
 var _sound_sliders: Array[HSlider] = []
-var _sound_slider_index: int = 0
 var _camera_controls_panel: PanelContainer
 var _zoom_label: Label
 var _selected_crew_ids: Array[String] = ["engineer", "medic", "botanist", "technician"]
@@ -93,8 +96,11 @@ var _camera: Camera3D
 var _camera_yaw: float = DEFAULT_CAMERA_YAW
 var _dragging_camera: bool = false
 var _last_mouse_position: Vector2 = Vector2.ZERO
+@onready var _settings_manager: SettingsManagerScript = get_node("/root/SettingsManager") as SettingsManagerScript
 
 func _ready() -> void:
+	_settings_manager.language_changed.connect(_on_language_changed)
+	_settings_manager.display_settings_changed.connect(_on_display_settings_changed)
 	_load_selected_crew()
 	var root := VBoxContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -364,6 +370,7 @@ func _selected_option_id(option: OptionButton) -> String:
 
 func _show_message(message: String) -> void:
 	_message.text = message
+	_settings_manager.translate_tree(_message)
 	_message.show()
 
 func _sync_board_resolution() -> void:
@@ -393,7 +400,7 @@ func _create_resource_hud(parent: Control) -> void:
 	row.add_theme_constant_override("separation", 12)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(row)
-	for key: String in ["mass", "air", "water", "food", "energy"]:
+	for key: String in ["mass", "oxygen", "food_supply", "energy"]:
 		var label := Label.new()
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -401,6 +408,8 @@ func _create_resource_hud(parent: Control) -> void:
 		label.text = "%s: —" % _resource_name(key)
 		if key == "energy":
 			label.tooltip_text = "Suministro eléctrico disponible / demanda eléctrica"
+		elif key == "food_supply":
+			label.tooltip_text = "Suma de reservas de agua y comida"
 		row.add_child(label)
 		_resource_labels[key] = label
 
@@ -495,7 +504,7 @@ func _create_simulation_controls(parent: Control) -> void:
 	panel.add_child(row)
 	_add_icon_button(row, "↻", "Reiniciar partida (R)", _reset)
 	_run_button = _add_icon_button(row, "▶", "Iniciar partida", _toggle_run_state)
-	_sound_button = _add_icon_button(row, "⚙", "Opciones de sonido (Esc / Tab)", _toggle_sound_menu)
+	_sound_button = _add_icon_button(row, "⚙", "Menú de opciones (Esc / Tab)", _toggle_sound_menu)
 	_speed_button = Button.new()
 	_speed_button.text = "×1.0 ▸"
 	_speed_button.tooltip_text = "Velocidad de simulación"
@@ -523,16 +532,16 @@ func _create_simulation_controls(parent: Control) -> void:
 		speed_option.custom_minimum_size = Vector2(52.0, 44.0)
 		speed_option.pressed.connect(_select_speed.bind(speed))
 		speed_row.add_child(speed_option)
-	_create_sound_menu(parent)
+	_create_settings_menu(parent)
 
-func _create_sound_menu(parent: Control) -> void:
+func _create_settings_menu(parent: Control) -> void:
 	_sound_menu = PanelContainer.new()
-	_sound_menu.name = "SoundOptions"
+	_sound_menu.name = "PlayerSettingsMenu"
 	_sound_menu.anchor_top = 1.0
 	_sound_menu.anchor_bottom = 1.0
 	_sound_menu.offset_left = 12.0
-	_sound_menu.offset_top = -242.0
-	_sound_menu.offset_right = 322.0
+	_sound_menu.offset_top = -312.0
+	_sound_menu.offset_right = 372.0
 	_sound_menu.offset_bottom = -82.0
 	_sound_menu.visible = false
 	_sound_menu.z_index = 10
@@ -550,10 +559,10 @@ func _create_sound_menu(parent: Control) -> void:
 	header.add_child(navigation)
 	var previous_button := Button.new()
 	previous_button.text = "‹"
-	previous_button.tooltip_text = "Enfocar el control de volumen anterior"
+	previous_button.tooltip_text = "Menú anterior"
 	previous_button.custom_minimum_size = Vector2(36.0, 32.0)
 	previous_button.add_theme_font_size_override("font_size", 22)
-	previous_button.pressed.connect(_focus_sound_slider.bind(-1))
+	previous_button.pressed.connect(_change_settings_page.bind(-1))
 	navigation.add_child(previous_button)
 	_sound_option_title = Label.new()
 	_sound_option_title.text = "Sonido"
@@ -563,27 +572,109 @@ func _create_sound_menu(parent: Control) -> void:
 	navigation.add_child(_sound_option_title)
 	var next_button := Button.new()
 	next_button.text = "›"
-	next_button.tooltip_text = "Enfocar el siguiente control de volumen"
+	next_button.tooltip_text = "Siguiente menú"
 	next_button.custom_minimum_size = Vector2(36.0, 32.0)
 	next_button.add_theme_font_size_override("font_size", 22)
-	next_button.pressed.connect(_focus_sound_slider.bind(1))
+	next_button.pressed.connect(_change_settings_page.bind(1))
 	navigation.add_child(next_button)
 	var close_button := Button.new()
 	close_button.text = "×"
-	close_button.tooltip_text = "Cerrar opciones de sonido"
+	close_button.tooltip_text = "Cerrar opciones"
 	close_button.pressed.connect(_toggle_sound_menu)
 	header.add_child(close_button)
-	_sound_sliders.clear()
-	var saved_values := _get_sound_values()
-	_add_sound_slider_row(content, "master", "Master", saved_values)
-	_add_sound_slider_row(content, "music", "Music", saved_values)
-	_add_sound_slider_row(content, "sfx", "SFX", saved_values)
+	_settings_page_body = VBoxContainer.new()
+	_settings_page_body.name = "SettingsPageBody"
+	_settings_page_body.add_theme_constant_override("separation", 6)
+	content.add_child(_settings_page_body)
+	_render_settings_page()
 
-func _focus_sound_slider(direction: int) -> void:
-	if _sound_sliders.is_empty():
+func _change_settings_page(direction: int) -> void:
+	_settings_page_index = posmod(_settings_page_index + direction, 3)
+	_render_settings_page()
+
+func _render_settings_page() -> void:
+	if _settings_page_body == null:
 		return
-	_sound_slider_index = posmod(_sound_slider_index + direction, _sound_sliders.size())
-	_sound_sliders[_sound_slider_index].grab_focus()
+	for child: Node in _settings_page_body.get_children():
+		child.queue_free()
+	_sound_sliders.clear()
+	var page_titles: Array[String] = ["Sonido", "Pantalla", "Idioma"]
+	_sound_option_title.text = page_titles[_settings_page_index]
+	match _settings_page_index:
+		0:
+			var saved_values := _get_sound_values()
+			_add_sound_slider_row(_settings_page_body, "master", "Master", saved_values)
+			_add_sound_slider_row(_settings_page_body, "music", "Music", saved_values)
+			_add_sound_slider_row(_settings_page_body, "sfx", "SFX", saved_values)
+		1:
+			var fullscreen_row := HBoxContainer.new()
+			_settings_page_body.add_child(fullscreen_row)
+			_fullscreen_toggle = CheckBox.new()
+			_fullscreen_toggle.text = "Pantalla completa"
+			_fullscreen_toggle.button_pressed = _settings_manager.fullscreen
+			_fullscreen_toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_fullscreen_toggle.toggled.connect(_settings_manager.set_fullscreen)
+			fullscreen_row.add_child(_fullscreen_toggle)
+			var resolution_label := Label.new()
+			resolution_label.text = "Resolución"
+			_settings_page_body.add_child(resolution_label)
+			_resolution_option = OptionButton.new()
+			_resolution_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var resolutions: Array[Vector2i] = _settings_manager.get_resolution_options()
+			var selected_resolution := 0
+			for index: int in range(resolutions.size()):
+				var size: Vector2i = resolutions[index]
+				_resolution_option.add_item("%d × %d" % [size.x, size.y])
+				_resolution_option.set_item_metadata(index, size)
+				if size == _settings_manager.resolution:
+					selected_resolution = index
+			_resolution_option.select(selected_resolution)
+			_resolution_option.disabled = _settings_manager.fullscreen
+			_resolution_option.item_selected.connect(_on_resolution_selected)
+			_settings_page_body.add_child(_resolution_option)
+			var fullscreen_note := Label.new()
+			fullscreen_note.text = "La resolución se elige en modo ventana."
+			if _settings_manager.is_game_window_embedded():
+				fullscreen_note.text = "El juego incrustado no puede cambiar el modo de pantalla. Desactiva Embed Game on Next Play para probarlo."
+			fullscreen_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			_settings_page_body.add_child(fullscreen_note)
+		2:
+			var language_label := Label.new()
+			language_label.text = "Selecciona un idioma"
+			_settings_page_body.add_child(language_label)
+			_language_option = OptionButton.new()
+			_language_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_language_option.add_item("Español")
+			_language_option.set_item_metadata(0, "es")
+			_language_option.add_item("English")
+			_language_option.set_item_metadata(1, "en")
+			_language_option.select(0 if _settings_manager.language == "es" else 1)
+			_language_option.item_selected.connect(_on_language_selected)
+			_settings_page_body.add_child(_language_option)
+	_settings_manager.translate_tree(_sound_menu)
+
+func _on_resolution_selected(index: int) -> void:
+	if _resolution_option == null or index < 0:
+		return
+	var selected: Variant = _resolution_option.get_item_metadata(index)
+	if selected is Vector2i:
+		_settings_manager.set_resolution(selected)
+
+func _on_language_selected(index: int) -> void:
+	if _language_option == null or index < 0:
+		return
+	_settings_manager.set_language(str(_language_option.get_item_metadata(index)))
+
+func _on_language_changed() -> void:
+	if _settings_page_body != null:
+		_render_settings_page()
+	_last_rendered_snapshot.clear()
+	_render(simulation.get_snapshot())
+	_settings_manager.translate_tree(self)
+
+func _on_display_settings_changed() -> void:
+	if _resolution_option != null:
+		_resolution_option.disabled = _settings_manager.fullscreen
 
 func _add_sound_slider_row(parent: VBoxContainer, volume_key: String, title: String, values: Dictionary) -> void:
 	var row := HBoxContainer.new()
@@ -610,19 +701,12 @@ func _add_sound_slider_row(parent: VBoxContainer, volume_key: String, title: Str
 	slider.value_changed.connect(_on_sound_value_changed.bind(volume_key, percentage_label))
 
 func _get_sound_values() -> Dictionary:
-	var saved_values: Variant = get_tree().root.get_meta(SOUND_VALUES_META, DEFAULT_SOUND_VALUES)
-	var values: Dictionary = DEFAULT_SOUND_VALUES.duplicate(true)
-	if saved_values is Dictionary:
-		for key: String in values.keys():
-			values[key] = clampi(roundi(float(saved_values.get(key, values[key]))), 0, 100)
-	return values
+	return _settings_manager.get_sound_percentages()
 
 func _on_sound_value_changed(value: float, volume_key: String, percentage_label: Label) -> void:
 	var percentage := clampi(roundi(value), 0, 100)
 	percentage_label.text = "%d%%" % percentage
-	var values := _get_sound_values()
-	values[volume_key] = percentage
-	get_tree().root.set_meta(SOUND_VALUES_META, values)
+	_settings_manager.set_sound_percentage(volume_key, percentage)
 
 func _toggle_sound_menu() -> void:
 	if _sound_menu == null:
@@ -682,6 +766,7 @@ func _refresh_build_menu() -> void:
 			text += " · %s" % _placement_error_text(preview.error_code)
 		button.text = text
 		button.disabled = not preview.ok
+	_settings_manager.translate_tree(_build_menu)
 
 func _placement_error_text(code: String) -> String:
 	var errors: Dictionary = {
@@ -704,7 +789,7 @@ func _place_selected_building(kind: String) -> void:
 		_refresh_build_menu()
 
 func _resource_name(key: String) -> String:
-	var names: Dictionary = {"mass": "Masa", "air": "Aire", "water": "Agua", "food": "Comida", "energy": "Energía"}
+	var names: Dictionary = {"mass": "Regolito", "oxygen": "Oxígeno", "food_supply": "Alimento", "energy": "Energía"}
 	return str(names.get(key, key.capitalize()))
 
 func _load_selected_crew() -> void:
@@ -940,6 +1025,7 @@ func _show_result(result: Dictionary) -> void:
 		_message.hide()
 	else:
 		_message.text = _error_text(str(result.get("error_code", "unknown_error")))
+		_settings_manager.translate_tree(_message)
 		_message.show()
 
 func _error_text(code: String) -> String:
@@ -1002,9 +1088,11 @@ func _render(snapshot: Dictionary) -> void:
 	if snapshot.phase == "finished":
 		_speed_menu.hide()
 		_camera_controls_panel.show()
-	for key: String in ["mass", "air", "water", "food"]:
-		_resource_labels[key].text = "%s: %.1f" % [_resource_name(key), resources[key]]
-	_resource_labels["energy"].text = "Energía: %.1f / %.1f" % [power.supply, power.demand]
+	_resource_labels["mass"].text = "%s: %.1f" % [_resource_name("mass"), float(resources.get("mass", 0.0))]
+	_resource_labels["oxygen"].text = "%s: %.1f" % [_resource_name("oxygen"), float(resources.get("air", 0.0))]
+	var available_food := float(resources.get("water", 0.0)) + float(resources.get("food", 0.0))
+	_resource_labels["food_supply"].text = "%s: %.1f" % [_resource_name("food_supply"), available_food]
+	_resource_labels["energy"].text = "%s: %.1f / %.1f" % [_resource_name("energy"), power.supply, power.demand]
 	_sol_label.text = "Soles transcurridos: %d" % int(snapshot.get("completed_sols", 0))
 	if _build_menu != null and _build_menu.visible:
 		_refresh_build_menu()
@@ -1047,7 +1135,7 @@ func _render(snapshot: Dictionary) -> void:
 			_cell_labels[index] = label
 		var state := "%ds" % building.remaining_seconds if building.remaining_seconds > 0 else ("ON" if building.powered else "OFF")
 		var short_names := {"habitat": "HÁBITAT", "solar": "SOLAR", "reactor": "REACTOR", "oxygen_generator": "OXÍGENO", "greenhouse": "CULTIVO", "laboratory": "LAB"}
-		_cell_labels[index].text = "%s\n%s" % [short_names.get(kind, kind.to_upper()), state]
+		_cell_labels[index].text = _settings_manager.translate_text("%s\n%s" % [short_names.get(kind, kind.to_upper()), state])
 		_cell_labels[index].position.y = 1.05
 		if building.warning != "":
 			_cell_materials[index].albedo_color = Color("c76d58")
@@ -1180,6 +1268,7 @@ func _render_feature_panels(snapshot: Dictionary, new_run: bool) -> void:
 		for report: Dictionary in reports:
 			report_lines.append("Sol %s%s · Δ reservas %s\nProducción %s · consumo %s · importaciones %s\nDéficits %s · bloqueos %s" % [report.get("sol", "?"), " (parcial)" if report.get("partial", false) else "", str(report.get("delta", {})), str(report.get("production", {})), str(report.get("consumption", {})), str(report.get("imports", {})), str(report.get("deficits", {})), str(report.get("blocked_seconds", {}))])
 		_report_status.text = "\n\n".join(report_lines)
+	_settings_manager.translate_tree(self)
 
 func _create_building_label() -> Label3D:
 	var label := Label3D.new()

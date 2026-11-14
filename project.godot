@@ -14,6 +14,10 @@ config/name="MarSins - Base de simulación"
 run/main_scene="res://scenes/MenuMarsSinner.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
+[autoload]
+
+SettingsManager="*res://scripts/settings_manager.gd"
+
 [display]
 
 window/size/viewport_width=1100
