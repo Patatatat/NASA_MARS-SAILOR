@@ -2,9 +2,17 @@
 
 Fecha: 14 de noviembre de 2026. Motor real: `4.7.2.stable.official.ed1daf0bf` (comprobado con `--version`).
 
-Resultado actual: **387 comprobaciones, 0 fallos**; importación y escena headless aprobadas en Godot 4.7.2. Se ejecutó el comando siguiente después de integrar mantenimiento, inspector e informes por sol.
+Resultado actual de la integración: **407 comprobaciones de simulación y 20 de interfaz, 0 fallos**; regresión del historial, importación y escena headless aprobadas en Godot 4.7.2.
+
+Se combinaron `rafael/simulacion` (`d1dee7f`) y `Patatatat:andres/interfaz` (`4f26a01`). Rafael confirmó adoptar 32×32 y huellas grandes. Se conservaron las pruebas de huellas de Andrés y se adaptaron las posiciones de los casos de eventos, expediciones, radiación, mejoras y mantenimiento sin cambiar sus resultados económicos esperados.
+
+`test_interface_integration.gd` recorre selección 4/6 → tablero → construcción por menú → selección de huella → iniciar/pausa → ROBERT → mejora → sesión de mantenimiento → final → reinicio → volver a selección. Se corrigieron referencias del test al control de inicio y al momento de aviso (el mantenimiento se pospone durante tormentas). Resultado final: 20 comprobaciones aprobadas.
+
+Se verificó una captura real del tablero a 1100×760 con OpenGL en Windows: tablero, HUD y panel lateral con scroll visibles. Se eliminó el redimensionamiento manual incompatible con `SubViewportContainer.stretch`; el contenedor controla la resolución. Esto no sustituye el playtest con ratón ni pruebas web/móvil.
 
 Corrección posterior del historial: la regresión de escena reprodujo dos fallos antes del arreglo (actualizar contenido y refrescar estado reiniciaban scroll). `scenes/history_panel.gd` evita reemplazos innecesarios y conserva posición vertical/horizontal al actualizar. Los dos historiales tienen paneles de lectura con scroll independiente; el global conserva todos los hechos. El del inspector deja de ser una etiqueta truncada a dos entradas. La rueda no se propaga al contenedor exterior. La posición solo se reinicia al cambiar de partida/edificio. El runner incluye `tests/test_history_scroll.gd`; estas comprobaciones usan controles y layout reales en headless, sin probar físicamente la rueda en una ventana.
+
+Nota de alcance: ese resultado corresponde a la base 2D validada en esta fecha. Las actualizaciones posteriores crean una escena separada para elegir cuatro especialistas y una malla isométrica 3D de 32×32 con giro y zoom. La simulación recibe los mismos IDs de especialistas, por lo que conserva sus efectos. El tablero muestra un HUD de recursos, suministro/demanda de energía y soles transcurridos, y reserva huellas de 3×3 para hábitat/solar/invernadero, 4×4 para reactor y 2×2 para generador de oxígeno/laboratorio. La ocupación impide solapamientos y huellas fuera del tablero; las casillas reservadas se distinguen en la vista. La subvista 3D ahora renderiza a 2× el tamaño visible con MSAA 4×, y las etiquetas usan una textura de fuente de mayor resolución. Los 89 casos aún no se han vuelto a ejecutar sobre estas actualizaciones; el flujo de escenas y la presentación en ventana siguen pendientes de comprobación manual. En este entorno no se encontraron Godot ni PowerShell para ejecutar el runner.
 
 Comando ejecutado desde la raíz:
 
@@ -69,4 +77,4 @@ Datos añadidos para este incremento: `balance.json.maintenance` (cadencia, lím
 
 Cambio observado en regresión: las tres sesiones anteriores fallaron inicialmente al introducir mantenimiento porque la estrategia ignoraba todos los avisos. Se adaptó esa estrategia para atender solicitudes; las pruebas independientes de degradación/apagado conservan la consecuencia nueva. No se cambió el balance para disimular el fallo. El límite del minijuego usa tiempo real separado de la economía, incluida la fracción de paso a x0.5.
 
-Pendiente de Rafael: interacción real en ventana, legibilidad del banco técnico y pruebas manuales del README. No se ha verificado exportación web, navegadores, móvil, rendimiento, equilibrio de estrategias ni el contenido del juego completo. Las tres sesiones automáticas no sustituyen tres partidas manuales de la futura versión integrada. Luque debe aportar sus dos minijuegos y Andrés conectar el adaptador de sesiones, inspector e informe.
+Pendiente: playtest manual de cámara, selección y lectura de paneles; exportación web, navegadores, móvil, rendimiento y equilibrio de estrategias. Las tres sesiones automáticas no sustituyen tres partidas manuales. Luque debe aportar sus dos minijuegos; el tablero integrado ya conecta sesiones, inspector e informes mediante controles provisionales.

@@ -1,5 +1,11 @@
 # Contrato de simulación · eventos y ROBERTS
 
+## Integración de interfaz y simulación
+
+La decisión confirmada por Rafael al integrar sustituye el mapa original: **32×32 y huellas de varias celdas**, con el tablero 3D de Andrés. Se conservan tiempos, costos y sistemas actuales de simulación. F5 abre `crew_selection.tscn`; la selección muestra las probabilidades configuradas antes de elegir equipo y pasa cuatro IDs validados a `simulation_lab.tscn`.
+
+El tablero conserva giro/zoom, menú de construcción y HUD. El panel lateral desplazable añade los controles existentes de ROBERTS, refugio, enterramiento, mejoras, sesiones de mantenimiento, inspector e informes. Un clic en cualquier celda ocupada identifica al edificio por su huella. Los resultados éxito/fallo son controles de prueba explícitos hasta integrar los minijuegos de Luque. Los historiales conservan posición de lectura y se limpian al reiniciar.
+
 Esta guía corresponde al código ejecutable de la base inicial. El plan vigente y el diseño v0.4 orientan el alcance; `local-only/Especificaciones/00-main-handoff.md` y `01-interface-guide.md` son referencias históricas locales, no incluidas en el repositorio. No se cargan sus JSON. Este incremento no completa el juego del fin de semana.
 
 ## Uso por Andrés
@@ -13,8 +19,9 @@ No requiere autoloads. La instancia es un `RefCounted` independiente de escenas.
 | `configure(data: Dictionary)` | Valida y copia datos; solo antes de inicializar la partida. Para otra configuración crear otra instancia. |
 | `reset_run(crew_ids: Array, run_seed: int = 1)` | Exactamente 4 IDs únicos de los 6 disponibles. Reinicia reloj, edificios, registro, salud y final. Error conserva la partida anterior. |
 | `get_catalog()` / `get_snapshot()` | Copias profundas de configuración / estado. |
-| `preview_placement(kind: String, cell: Vector2i)` | Comprueba ocupación, tipo, distancia y presupuesto; devuelve costo y duración sin mutar. |
-| `place_building(kind: String, cell: Vector2i)` | Revalida, cobra una sola vez y reserva la celda; retorna `result.building_id`. |
+| `preview_placement(kind: String, cell: Vector2i)` | Comprueba huella completa, límites, tipo, distancia y presupuesto; devuelve costo y duración sin mutar. |
+| `place_building(kind: String, cell: Vector2i)` | Revalida, cobra una sola vez y reserva la huella; retorna `result.building_id`. |
+| `get_building_footprint_size(kind: String)` / `get_building_footprint_cells(kind, anchor)` | Consulta el lado en celdas y todas las coordenadas ocupadas por un edificio. |
 | `set_enabled(building_id: String, enabled: bool)` | Enciende/apaga; repetir mismo estado no duplica registro. Hábitat no apagable. |
 | `start_run()` | Solo desde planificación. |
 | `set_paused(paused: bool)` | Solo durante simulación. |
@@ -32,7 +39,7 @@ No requiere autoloads. La instancia es un `RefCounted` independiente de escenas.
 | `apply_maintenance_result(session_id: String, success: bool, elapsed_seconds: float, abandoned: bool = false)` | Aplica una sola vez el resultado de ese intento. |
 | `reactivate_building(building_id: String)` | Después del enfriamiento, cobra masa y recupera rendimiento normal. |
 
-Los comandos retornan `{ok, error_code, cost, result}`. Un fallo no muta. Códigos principales: `select_four`, `invalid_crew`, `invalid_phase`, `invalid_building`, `outside_grid`, `occupied_cell`, `reactor_too_close`, `insufficient_mass`, `unknown_building`, `habitat_required`, `invalid_speed`, `invalid_delta`, `busy`.
+Los comandos retornan `{ok, error_code, cost, result}`. Un fallo no muta. Códigos principales: `select_four`, `invalid_crew`, `invalid_phase`, `invalid_building`, `outside_grid`, `footprint_outside_grid`, `occupied_footprint`, `reactor_too_close`, `insufficient_mass`, `unknown_building`, `habitat_required`, `invalid_speed`, `invalid_delta`, `busy`.
 
 Señales: `state_updated(snapshot)` después de una operación completa, `event_changed(event)` para aviso/inicio/fin/ausencia de evento, `robert_changed(robert)` para salida/retorno/pérdida y `run_finished(result)` una sola vez por partida. No llamar comandos síncronos desde estas señales: se rechazan para evitar reentrada. Encolar la intención para el siguiente frame. No modificar el payload compartido entre suscriptores; obtener otra copia si se necesita manipularlo. Con un frame largo, las notificaciones de transiciones se entregan en orden al finalizar `advance`: sus payloads son históricos, el snapshot es el estado actual. Usar timestamps del evento y el registro para cronología.
 
@@ -41,8 +48,9 @@ Snapshot: fase (`planning`, `running`, `finished`), semilla, segundos enteros, s
 ## Reglas y unidades de esta base
 
 - Masa/regolito/aire/agua/comida son cantidades de balance; potencia es tasa disponible, nunca inventario ni batería. Salud 0–100. No son cifras científicas ni parámetros médicos.
-- Configuración nominal: 12 soles × 25 segundos. Datos numéricos provisionales en `data/balance.json`; validación estructural, tipos numéricos finitos y no negativos. Los valores de duración de sol y construcción son enteros. Grid fijo 6×6.
-- Hábitat en (2,2), reactor a distancia Manhattan mínima 2. Un edificio ocupa una celda. Construir paga al ordenar; durante planificación los temporizadores están detenidos. Al iniciar, una obra de 5 segundos termina al final del tick 5 y produce desde el 6. No hay cancelación ni reembolso.
+- El HUD muestra `Energía` como suministro eléctrico disponible / demanda eléctrica, no como una reserva acumulable. `Soles transcurridos` muestra `completed_sols`: inicia en 0 y aumenta al completar cada día marciano simulado.
+- Configuración nominal: 12 soles × 25 segundos. Datos numéricos provisionales en `data/balance.json`; validación estructural, tipos numéricos finitos y no negativos. Los valores de duración de sol y construcción son enteros. Grid fijo 32×32.
+- Huellas cuadradas: hábitat 3×3, solar 3×3, reactor 4×4, generador de oxígeno 2×2, invernadero 3×3 y laboratorio 2×2. Los edificios no pueden solapar huellas ni salir del tablero; las huellas que solo comparten borde sí pueden tocarse. En medidas pares, la celda ancla es la primera de las dos centrales y la extensión sobrante queda hacia +X/+Y. El hábitat empieza en (15,15). Se conserva la distancia Manhattan mínima 2 para el reactor. Construir paga al ordenar; durante planificación los temporizadores están detenidos. Al iniciar, una obra de 5 segundos termina al final del tick 5 y produce desde el 6. No hay cancelación ni reembolso.
 - Prioridad eléctrica provisional: hábitat → oxígeno → invernadero → laboratorio → ROBERTS; empates por orden de construcción/ID de robot. Cada consumidor requiere toda su potencia. Las fuentes no necesitan potencia. No hay noche ni baterías.
 - Orden por segundo: transiciones de eventos → avisos/degradación/apagado de mantenimiento → potencia → producción (riego antes del consumo de la tripulación) → consumos separados → faltantes/daño/muerte → radiación/daño/muerte → obras/mejoras/enterramiento → retorno de ROBERTS → soles/resumen → recalcular potencia/bonus → final. Un retorno no salva a un tripulante muerto durante el consumo del mismo paso. Sí cuenta para el inventario final al coincidir con el relevo. El reloj real de sesiones se procesa también en fracciones de un paso simulado, respetando cada transición de evento.
 - Conversión de tasas: `cantidad_por_sol / sol_seconds`. Invernadero sin agua suficiente para el paso no produce ni cobra riego. Falta de potencia detiene producción. Producción precede al consumo y puede cubrirlo en el mismo paso.

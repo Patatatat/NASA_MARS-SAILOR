@@ -3,6 +3,10 @@ extends SceneTree
 const Simulation = preload("res://domain/simulation.gd")
 const Config = preload("res://domain/simulation_config.gd")
 const CREW := ["engineer", "medic", "botanist", "technician"]
+const SOLAR_CELL := Vector2i(1, 1)
+const REACTOR_CELL := Vector2i(18, 15)
+const OXYGEN_CELL := Vector2i(4, 1)
+const GREENHOUSE_CELL := Vector2i(7, 1)
 var failures: int = 0
 var checks: int = 0
 var finished_count: int = 0
@@ -15,6 +19,7 @@ func _initialize() -> void:
 		return
 	var data: Dictionary = loaded.data
 	_test_config(data)
+	_test_footprints(data)
 	_test_commands(data)
 	_test_clock(data)
 	_test_economy(data)
@@ -54,18 +59,18 @@ func _test_commands(data: Dictionary) -> void:
 	_check(not sim.reset_run(["engineer", "engineer", "medic", "botanist"]).ok, "rechaza duplicados")
 	_check(not sim.reset_run(["engineer"]).ok, "rechaza menos de cuatro")
 	_check(sim.get_snapshot() == before, "selección inválida no muta")
-	for cell: Vector2i in [Vector2i(-1, 0), Vector2i(6, 0), Vector2i(2, 2)]:
+	for cell: Vector2i in [Vector2i(-1, 0), Vector2i(32, 0), Vector2i(15, 15)]:
 		_check(not sim.place_building("solar", cell).ok, "rechaza celda inválida")
-	_check(not sim.place_building("reactor", Vector2i(2, 3)).ok, "distancia reactor")
+	_check(not sim.place_building("reactor", Vector2i(15, 16)).ok, "distancia reactor")
 	_check(not sim.place_building("unknown", Vector2i.ZERO).ok, "tipo desconocido")
 	_check(sim.get_snapshot() == before, "rechazos sin cambios")
-	_check(sim.preview_placement("solar", Vector2i.ZERO).cost.mass == 15, "vista previa costo 15")
+	_check(sim.preview_placement("solar", SOLAR_CELL).cost.mass == 15, "vista previa costo 15")
 	_check(sim.get_snapshot() == before, "vista previa no muta")
-	_check(sim.place_building("reactor", Vector2i.ZERO).ok, "primer reactor")
-	_check(sim.place_building("reactor", Vector2i(5, 5)).ok, "segundo reactor")
+	_check(sim.place_building("reactor", REACTOR_CELL).ok, "primer reactor")
+	_check(sim.place_building("reactor", Vector2i(28, 28)).ok, "segundo reactor")
 	before = sim.get_snapshot()
-	_check(not sim.place_building("solar", Vector2i(1, 0)).ok, "masa insuficiente")
-	_check(not sim.place_building("reactor", Vector2i.ZERO).ok, "repetir compra no cobra")
+	_check(not sim.place_building("solar", SOLAR_CELL).ok, "masa insuficiente")
+	_check(not sim.place_building("reactor", REACTOR_CELL).ok, "repetir compra no cobra")
 	_check(sim.get_snapshot() == before, "compra fallida atómica")
 	var copy: Dictionary = sim.get_snapshot()
 	copy.crew[0].health = -100
@@ -75,14 +80,31 @@ func _test_commands(data: Dictionary) -> void:
 	_check(sim.reset_run(CREW, 123).ok and sim.get_snapshot().resources.mass == 100, "reinicio recupera masa")
 	_check(sim.get_snapshot().buildings.size() == 1 and sim.get_snapshot().log.is_empty(), "reinicio borra edificios y registros")
 
+func _test_footprints(data: Dictionary) -> void:
+	var sim := _new(data)
+	var expected_sizes := {
+		"habitat": 3, "solar": 3, "reactor": 4,
+		"oxygen_generator": 2, "greenhouse": 3, "laboratory": 2
+	}
+	for kind: String in expected_sizes:
+		var size: int = expected_sizes[kind]
+		_check(sim.get_building_footprint_size(kind) == size, "%s tamaño de huella" % kind)
+		_check(sim.get_building_footprint_cells(kind, Vector2i(10, 10)).size() == size * size, "%s número de casillas" % kind)
+	_check(sim.get_building_footprint_size("unknown") == 0, "tipo sin huella desconocido")
+	_check(sim.preview_placement("solar", Vector2i(13, 15)).error_code == "occupied_footprint", "huella solapa la base")
+	_check(sim.preview_placement("solar", Vector2i(0, 15)).error_code == "footprint_outside_grid", "huella fuera del borde")
+	_check(sim.place_building("solar", Vector2i(10, 15)).ok, "construcción fuera del área de la base")
+	_check(sim.place_building("oxygen_generator", Vector2i(12, 15)).ok, "huellas contiguas sin solapamiento")
+	_check(sim.preview_placement("reactor", Vector2i(30, 15)).error_code == "footprint_outside_grid", "reactor no cabe en el borde")
+
 func _test_clock(data: Dictionary) -> void:
 	var a := _new(data)
 	var b := _new(data)
 	a.advance(100)
 	_check(a.get_snapshot().elapsed_seconds == 0, "planificación no avanza")
 	for sim: RefCounted in [a, b]:
-		sim.place_building("solar", Vector2i.ZERO)
-		sim.place_building("oxygen_generator", Vector2i(1, 0))
+		sim.place_building("solar", SOLAR_CELL)
+		sim.place_building("oxygen_generator", OXYGEN_CELL)
 	a.start_run()
 	b.start_run()
 	a.advance(75)
@@ -111,8 +133,8 @@ func _test_economy(data: Dictionary) -> void:
 	_near(state.resources.water, 152, "agua: 160 - 4×2")
 	_near(state.resources.food, 92, "comida: 100 - 4×2")
 	sim = _new(data)
-	sim.place_building("solar", Vector2i.ZERO)
-	sim.place_building("oxygen_generator", Vector2i(1, 0))
+	sim.place_building("solar", SOLAR_CELL)
+	sim.place_building("oxygen_generator", OXYGEN_CELL)
 	sim.start_run()
 	sim.advance(5)
 	_near(sim.get_snapshot().resources.air, 78.4, "obra no produce durante cinco segundos")
@@ -127,16 +149,16 @@ func _test_economy(data: Dictionary) -> void:
 	var dry := data.duplicate(true)
 	dry.initial.water = 0
 	sim = _new(dry)
-	sim.place_building("reactor", Vector2i.ZERO)
-	sim.place_building("greenhouse", Vector2i(1, 0))
+	sim.place_building("reactor", REACTOR_CELL)
+	sim.place_building("greenhouse", GREENHOUSE_CELL)
 	sim.start_run()
 	sim.advance(25)
 	_near(sim.get_snapshot().resources.food, 92, "sin agua no produce comida")
 	_near(sim.get_snapshot().deficits.water, 8, "déficit registrado antes de limitar a cero")
 	_near(sim.get_snapshot().crew[0].health, 80, "8 faltantes / 4 × 10 de daño")
 	sim = _new(data)
-	sim.place_building("reactor", Vector2i.ZERO)
-	sim.place_building("greenhouse", Vector2i(1, 0))
+	sim.place_building("reactor", REACTOR_CELL)
+	sim.place_building("greenhouse", GREENHOUSE_CELL)
 	sim.start_run()
 	sim.advance(35)
 	_near(sim.get_snapshot().resources.food, 101.3, "botánico: 100 - 11.2 + 12.5")
@@ -146,9 +168,9 @@ func _test_endings(data: Dictionary) -> void:
 	var baseline := _new(data)
 	for run: int in range(3):
 		baseline.reset_run(CREW, 123)
-		baseline.place_building("reactor", Vector2i.ZERO)
-		baseline.place_building("oxygen_generator", Vector2i(1, 0))
-		baseline.place_building("greenhouse", Vector2i(3, 0))
+		baseline.place_building("reactor", REACTOR_CELL)
+		baseline.place_building("oxygen_generator", OXYGEN_CELL)
+		baseline.place_building("greenhouse", GREENHOUSE_CELL)
 		baseline.start_run()
 		for second: int in range(300):
 			baseline.advance(1)
@@ -163,7 +185,7 @@ func _test_endings(data: Dictionary) -> void:
 	abundant.initial.water = 1000
 	abundant.initial.food = 1000
 	var sim := _new(abundant)
-	sim.place_building("solar", Vector2i.ZERO)
+	sim.place_building("solar", SOLAR_CELL)
 	sim.run_finished.connect(func(_result: Dictionary) -> void: finished_count += 1)
 	sim.start_run()
 	sim.advance(299)
@@ -173,7 +195,7 @@ func _test_endings(data: Dictionary) -> void:
 	sim.advance(1000)
 	_check(finished_count == 1, "final emitido una sola vez")
 	var before: Dictionary = sim.get_snapshot()
-	_check(not sim.place_building("solar", Vector2i(1, 0)).ok, "no construir después del final")
+	_check(not sim.place_building("solar", SOLAR_CELL).ok, "no construir después del final")
 	_check(sim.get_snapshot() == before, "final inmutable por comandos")
 	sim.reset_run(CREW)
 	sim.start_run()
@@ -202,7 +224,7 @@ func _test_endings(data: Dictionary) -> void:
 	var fatal := empty.duplicate(true)
 	fatal.buildings.solar.build_seconds = 0
 	sim = _new(fatal)
-	sim.place_building("solar", Vector2i.ZERO)
+	sim.place_building("solar", SOLAR_CELL)
 	_near(sim.get_snapshot().power.supply, 6, "bonus antes de morir")
 	sim.start_run()
 	sim.advance(300)
@@ -233,8 +255,8 @@ func _test_events(data: Dictionary) -> void:
 	rules.events.solar_particles.probability = 1
 	var sim := _new(rules)
 	_check(sim.get_forecast().storm.probability == 1, "pronóstico usa probabilidad configurada")
-	sim.place_building("solar", Vector2i.ZERO)
-	sim.place_building("reactor", Vector2i(5, 5))
+	sim.place_building("solar", Vector2i(2, 2))
+	sim.place_building("reactor", Vector2i(24, 24))
 	sim.start_run()
 	sim.advance(54)
 	_check(sim.get_snapshot().event.is_empty(), "no aviso antes de tiempo")
@@ -289,8 +311,8 @@ func _test_events(data: Dictionary) -> void:
 
 func _mission_sim(rules: Dictionary) -> RefCounted:
 	var sim := _new(rules)
-	sim.place_building("reactor", Vector2i.ZERO)
-	sim.place_building("laboratory", Vector2i(1, 0))
+	sim.place_building("reactor", Vector2i(2, 2))
+	sim.place_building("laboratory", Vector2i(8, 2))
 	sim.start_run()
 	sim.advance(10)
 	return sim
@@ -341,8 +363,8 @@ func _test_roberts(data: Dictionary) -> void:
 	_check(not sim.send_robert("robert_1", "ice").ok, "no reutiliza perdido")
 	var geo := _mission_sim(rules)
 	geo.reset_run(["geologist", "medic", "engineer", "technician"], 123)
-	geo.place_building("reactor", Vector2i.ZERO)
-	geo.place_building("laboratory", Vector2i(1, 0))
+	geo.place_building("reactor", Vector2i(2, 2))
+	geo.place_building("laboratory", Vector2i(8, 2))
 	geo.start_run()
 	geo.advance(10)
 	_near(geo.preview_robert("robert_1", "ice").result.amount, 56.25, "geólogo: 45×1.25")
@@ -401,7 +423,7 @@ func _test_radiation(data: Dictionary) -> void:
 	sim.advance(25)
 	_near(sim.get_snapshot().crew[0].dose, 0.75, "médico reduce dosis futura")
 	sim.set_sheltered(true)
-	sim.place_building("solar", Vector2i.ZERO)
+	sim.place_building("solar", Vector2i(2, 2))
 	sim.advance(25)
 	_near(sim.get_snapshot().crew[0].dose, 0.9375, "refugio acumula: .75 + .75×.25")
 	_check(sim.get_snapshot().buildings[1].remaining_seconds == 5, "refugio detiene obras")
@@ -445,8 +467,8 @@ func _test_robert_reuse(data: Dictionary) -> void:
 	# Reproduce el bloqueo legítimo: el laboratorio pierde potencia en tormenta.
 	rules.events.storm.probability = 1
 	sim = _new(rules)
-	sim.place_building("solar", Vector2i.ZERO)
-	sim.place_building("laboratory", Vector2i(1, 0))
+	sim.place_building("solar", Vector2i(2, 2))
+	sim.place_building("laboratory", Vector2i(8, 2))
 	sim.start_run()
 	sim.advance(10)
 	_check(sim.send_robert("robert_1", "quarry").ok, "sale con laboratorio solar")
@@ -471,7 +493,7 @@ func _test_upgrades(data: Dictionary) -> void:
 	var sim := _new(rules)
 	var before: Dictionary = sim.get_snapshot()
 	_check(not sim.start_upgrade("b1").ok and sim.get_snapshot() == before, "no mejora en planificación")
-	sim.place_building("solar", Vector2i.ZERO)
+	sim.place_building("solar", Vector2i(2, 2))
 	sim.start_run()
 	before = sim.get_snapshot()
 	_check(sim.start_upgrade("b2").error_code == "building_under_construction", "no mejora obra incompleta")
@@ -508,7 +530,7 @@ func _test_upgrades(data: Dictionary) -> void:
 	var poor := rules.duplicate(true)
 	poor.initial.mass = 15
 	var other := _new(poor)
-	other.place_building("solar", Vector2i.ZERO)
+	other.place_building("solar", Vector2i(2, 2))
 	other.start_run()
 	other.advance(5)
 	before = other.get_snapshot()
@@ -516,9 +538,9 @@ func _test_upgrades(data: Dictionary) -> void:
 	# Las cinco definiciones de nivel 2 se consumen realmente por la economía.
 	for kind: String in ["reactor", "oxygen_generator", "greenhouse", "laboratory"]:
 		other = _new(rules)
-		other.place_building("solar", Vector2i.ZERO)
-		other.place_building("reactor", Vector2i(5, 5))
-		other.place_building(kind, Vector2i(1, 0))
+		other.place_building("solar", Vector2i(2, 2))
+		other.place_building("reactor", Vector2i(24, 24))
+		other.place_building(kind, Vector2i(8, 2))
 		other.start_run()
 		other.advance(10)
 		_check(other.start_upgrade("b4").ok, "mejora " + kind)
@@ -542,7 +564,7 @@ func _test_upgrades(data: Dictionary) -> void:
 	var crew := ["engineer", "scientist", "medic", "technician"]
 	var a := _new(rules)
 	a.reset_run(crew)
-	a.place_building("solar", Vector2i.ZERO)
+	a.place_building("solar", Vector2i(2, 2))
 	a.start_run()
 	a.advance(5)
 	_check(a.preview_upgrade("b2").result.duration_seconds == 15, "científico reduce 20 s a 15")
@@ -560,7 +582,7 @@ func _test_upgrades(data: Dictionary) -> void:
 	lethal.radiation.health_loss_per_dose = 10
 	a = _new(lethal)
 	a.reset_run(crew)
-	a.place_building("solar", Vector2i.ZERO)
+	a.place_building("solar", Vector2i(2, 2))
 	a.start_run()
 	a.advance(5)
 	a.start_upgrade("b2")
@@ -576,7 +598,7 @@ func _test_upgrades(data: Dictionary) -> void:
 	var b := _new(rules)
 	for subject: RefCounted in [a, b]:
 		subject.reset_run(crew)
-		subject.place_building("solar", Vector2i.ZERO)
+		subject.place_building("solar", Vector2i(2, 2))
 		subject.start_run()
 		subject.advance(5)
 		subject.start_upgrade("b2")
@@ -587,7 +609,7 @@ func _test_upgrades(data: Dictionary) -> void:
 	var boundary := rules.duplicate(true)
 	boundary.target_sols = 1
 	a = _new(boundary)
-	a.place_building("solar", Vector2i.ZERO)
+	a.place_building("solar", Vector2i(2, 2))
 	a.start_run()
 	a.advance(5)
 	a.start_upgrade("b2")
@@ -683,7 +705,7 @@ func _test_maintenance(data: Dictionary) -> void:
 	_check(sim.apply_maintenance_result(first.result.id, true, 10).ok, "sesión interrumpida conserva derecho a éxito")
 	var stale_id: String = first.result.id
 	sim.reset_run(CREW, 123)
-	sim.place_building("reactor", Vector2i.ZERO)
+	sim.place_building("reactor", Vector2i(2, 2))
 	sim.start_run()
 	sim.advance(110)
 	var next_run: Dictionary = sim.begin_maintenance("b2")
@@ -712,7 +734,7 @@ func _test_maintenance(data: Dictionary) -> void:
 	var pending_rules := rules.duplicate(true)
 	pending_rules.maintenance.global_gap_seconds = 5
 	sim = _new(pending_rules)
-	for cell: Vector2i in [Vector2i.ZERO, Vector2i(5, 0), Vector2i(0, 5), Vector2i(5, 5)]:
+	for cell: Vector2i in [Vector2i(2, 2), Vector2i(24, 2), Vector2i(2, 24), Vector2i(24, 24)]:
 		sim.place_building("reactor", cell)
 	sim.start_run()
 	sim.advance(115)
@@ -726,8 +748,8 @@ func _test_maintenance(data: Dictionary) -> void:
 			notice_times.append(entry.seconds)
 	_check(pending_count == 2 and notice_times == [110, 115], "máximo dos avisos y separación global")
 	var oxygen := _new(rules)
-	oxygen.place_building("reactor", Vector2i.ZERO)
-	oxygen.place_building("oxygen_generator", Vector2i(1, 0))
+	oxygen.place_building("reactor", Vector2i(2, 2))
+	oxygen.place_building("oxygen_generator", Vector2i(8, 2))
 	oxygen.start_run()
 	oxygen.advance(130)
 	before = oxygen.get_snapshot()
@@ -780,8 +802,8 @@ func _test_reports(data: Dictionary) -> void:
 	var dry := rules.duplicate(true)
 	dry.initial.water = 0
 	sim = _new(dry)
-	sim.place_building("reactor", Vector2i.ZERO)
-	sim.place_building("greenhouse", Vector2i(1, 0))
+	sim.place_building("reactor", Vector2i(2, 2))
+	sim.place_building("greenhouse", Vector2i(8, 2))
 	sim.start_run()
 	sim.advance(25)
 	report = sim.get_snapshot().sol_reports[0]

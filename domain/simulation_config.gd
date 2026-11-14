@@ -20,7 +20,7 @@ static func validate(value: Variant) -> Dictionary:
 	for key: String in ["schema_version", "grid_size", "sol_seconds", "target_sols"]:
 		if not _number(data.get(key), 1.0) or float(data[key]) != floor(float(data[key])):
 			return _error(key)
-	if data.schema_version != 1 or data.grid_size != 6 or data.sol_seconds > 3600 or data.target_sols > 100:
+	if data.schema_version != 1 or data.grid_size != 32 or data.sol_seconds > 3600 or data.target_sols > 100:
 		return _error("schema_or_limits")
 	for key: String in ["health_loss_per_missing_unit", "engineer_multiplier", "botanist_multiplier", "technician_multiplier"]:
 		if not _number(data.get(key), 0.0):

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "grid_size": 6,
+  "grid_size": 32,
   "sol_seconds": 25,
   "target_sols": 12,
   "initial": {"mass": 100, "regolith": 0, "air": 80, "water": 160, "food": 100},
