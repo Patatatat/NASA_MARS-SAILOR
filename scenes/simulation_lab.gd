@@ -72,6 +72,11 @@ var _sound_button: Button
 var _speed_button: Button
 var _speed_menu: PanelContainer
 var _sound_menu: PanelContainer
+var _sound_option_title: Label
+var _sound_option_content: VBoxContainer
+var _sound_active_slider: HSlider
+var _sound_active_percentage: Label
+var _sound_option_index: int = 0
 var _camera_controls_panel: PanelContainer
 var _zoom_label: Label
 var _selected_crew_ids: Array[String] = ["engineer", "medic", "botanist", "technician"]
@@ -539,42 +544,73 @@ func _create_sound_menu(parent: Control) -> void:
 	_sound_menu.add_child(content)
 	var header := HBoxContainer.new()
 	content.add_child(header)
-	var title := Label.new()
-	title.text = "Opciones de sonido"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
+	var header_balance := Control.new()
+	header_balance.custom_minimum_size = Vector2(28.0, 0.0)
+	header.add_child(header_balance)
+	var navigation := HBoxContainer.new()
+	navigation.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(navigation)
+	var previous_button := Button.new()
+	previous_button.text = "‹"
+	previous_button.tooltip_text = "Opción de audio anterior"
+	previous_button.custom_minimum_size = Vector2(36.0, 32.0)
+	previous_button.add_theme_font_size_override("font_size", 22)
+	previous_button.pressed.connect(_cycle_sound_option.bind(-1))
+	navigation.add_child(previous_button)
+	_sound_option_title = Label.new()
+	_sound_option_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_sound_option_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sound_option_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	navigation.add_child(_sound_option_title)
+	var next_button := Button.new()
+	next_button.text = "›"
+	next_button.tooltip_text = "Siguiente opción de audio"
+	next_button.custom_minimum_size = Vector2(36.0, 32.0)
+	next_button.add_theme_font_size_override("font_size", 22)
+	next_button.pressed.connect(_cycle_sound_option.bind(1))
+	navigation.add_child(next_button)
 	var close_button := Button.new()
 	close_button.text = "×"
 	close_button.tooltip_text = "Cerrar opciones de sonido"
 	close_button.pressed.connect(_toggle_sound_menu)
 	header.add_child(close_button)
-	var saved_values := _get_sound_values()
-	_add_sound_slider_row(content, "master", "Master", saved_values)
-	_add_sound_slider_row(content, "music", "Music", saved_values)
-	_add_sound_slider_row(content, "sfx", "SFX", saved_values)
+	_sound_option_content = VBoxContainer.new()
+	content.add_child(_sound_option_content)
+	_render_sound_option()
 
-func _add_sound_slider_row(parent: VBoxContainer, volume_key: String, title: String, values: Dictionary) -> void:
+func _cycle_sound_option(direction: int) -> void:
+	_sound_option_index = wrapi(_sound_option_index + direction, 0, 3)
+	_render_sound_option()
+
+func _render_sound_option() -> void:
+	if _sound_option_content == null or _sound_option_title == null:
+		return
+	for child: Node in _sound_option_content.get_children():
+		_sound_option_content.remove_child(child)
+		child.queue_free()
+	var keys := ["master", "music", "sfx"]
+	var titles := ["Master volume", "Music volume", "SFX volume"]
+	var slider_names := ["Master", "Music", "SFX"]
+	var volume_key: String = keys[_sound_option_index]
+	_sound_option_title.text = titles[_sound_option_index]
+	var values := _get_sound_values()
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
-	parent.add_child(row)
-	var name_label := Label.new()
-	name_label.text = title
-	name_label.custom_minimum_size = Vector2(55.0, 0.0)
-	row.add_child(name_label)
-	var slider := HSlider.new()
-	slider.name = "%sVolumeSlider" % title
-	slider.min_value = 0.0
-	slider.max_value = 100.0
-	slider.step = 1.0
-	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	slider.value = float(values.get(volume_key, 0))
-	row.add_child(slider)
-	var percentage_label := Label.new()
-	percentage_label.custom_minimum_size = Vector2(42.0, 0.0)
-	percentage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	percentage_label.text = "%d%%" % roundi(slider.value)
-	row.add_child(percentage_label)
-	slider.value_changed.connect(_on_sound_value_changed.bind(volume_key, percentage_label))
+	_sound_option_content.add_child(row)
+	_sound_active_slider = HSlider.new()
+	_sound_active_slider.name = "%sVolumeSlider" % slider_names[_sound_option_index]
+	_sound_active_slider.min_value = 0.0
+	_sound_active_slider.max_value = 100.0
+	_sound_active_slider.step = 1.0
+	_sound_active_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_sound_active_slider.value = float(values.get(volume_key, 0))
+	row.add_child(_sound_active_slider)
+	_sound_active_percentage = Label.new()
+	_sound_active_percentage.custom_minimum_size = Vector2(42.0, 0.0)
+	_sound_active_percentage.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_sound_active_percentage.text = "%d%%" % roundi(_sound_active_slider.value)
+	row.add_child(_sound_active_percentage)
+	_sound_active_slider.value_changed.connect(_on_sound_value_changed.bind(volume_key, _sound_active_percentage))
 
 func _get_sound_values() -> Dictionary:
 	var saved_values: Variant = get_tree().root.get_meta(SOUND_VALUES_META, DEFAULT_SOUND_VALUES)
