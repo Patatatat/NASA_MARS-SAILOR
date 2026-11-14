@@ -1,0 +1,14 @@
+.godot/
+exports/
+test-results/
+*.tmp
+
+# Material personal y referencias fuera del repositorio del equipo.
+/local-only/
+/.agents/
+
+# Carpetas locales del editor, si vuelven a generarse en la raíz.
+/export_templates/
+/feature_profiles/
+/script_templates/
+/text_editor_themes/

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "grid_size": 6,
+  "sol_seconds": 25,
+  "target_sols": 12,
+  "initial": {"mass": 100, "regolith": 0, "air": 80, "water": 160, "food": 100},
+  "consumption_per_crew_per_sol": {"air": 2, "water": 2, "food": 2},
+  "health_loss_per_missing_unit": 10,
+  "engineer_multiplier": 1.2,
+  "botanist_multiplier": 1.25,
+  "technician_multiplier": 0.8,
+  "buildings": {
+    "habitat": {"mass": 0, "build_seconds": 0, "power_supply": 0, "power_demand": 1, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0},
+    "solar": {"mass": 15, "build_seconds": 5, "power_supply": 5, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0},
+    "reactor": {"mass": 45, "build_seconds": 10, "power_supply": 14, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0},
+    "oxygen_generator": {"mass": 20, "build_seconds": 5, "power_supply": 0, "power_demand": 4, "air_per_sol": 12, "food_per_sol": 0, "water_per_sol": 0},
+    "greenhouse": {"mass": 25, "build_seconds": 10, "power_supply": 0, "power_demand": 3, "air_per_sol": 2, "food_per_sol": 10, "water_per_sol": 4},
+    "laboratory": {"mass": 20, "build_seconds": 10, "power_supply": 0, "power_demand": 2, "air_per_sol": 0, "food_per_sol": 0, "water_per_sol": 0}
+  }
+}
