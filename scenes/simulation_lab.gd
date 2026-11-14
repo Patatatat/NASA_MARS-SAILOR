@@ -5,6 +5,8 @@ const Simulation = preload("res://domain/simulation.gd")
 const Config = preload("res://domain/simulation_config.gd")
 const CREW_SELECTION_SCENE := "res://scenes/crew_selection.tscn"
 const SELECTED_CREW_META := "mars_selected_crew_ids"
+const SOUND_VALUES_META := "mars_sound_percentages"
+const DEFAULT_SOUND_VALUES: Dictionary = {"master": 0, "music": 0, "sfx": 0}
 const CREW_IDS := ["engineer", "medic", "botanist", "scientist", "geologist", "technician"]
 const CREW_NAMES := {
 	"engineer": "Ingeniería",
@@ -21,10 +23,9 @@ const TILE_SIZE := 1.42
 const DEFAULT_CAMERA_YAW := PI / 4.0
 const DEFAULT_CAMERA_PITCH := deg_to_rad(-35.264)
 const DEFAULT_CAMERA_SIZE := 64.0
-const CAMERA_MIN_PITCH := deg_to_rad(-70.0)
-const CAMERA_MAX_PITCH := deg_to_rad(-10.0)
 const CAMERA_MIN_SIZE := 16.0
 const CAMERA_MAX_SIZE := 80.0
+const CAMERA_ZOOM_STEP: float = (CAMERA_MAX_SIZE - CAMERA_MIN_SIZE) * 0.25
 const TILE_SURFACE_Y := 0.08
 const BOARD_RENDER_SCALE := 2.0
 const SIMULATION_SPEEDS := [0.5, 1.0, 2.0, 4.0]
@@ -37,8 +38,6 @@ const BUILDING_NAMES := {
 }
 
 var simulation := Simulation.new()
-var _status: Label
-var _requirements: Label
 var _message: Label
 var _sol_label: Label
 var _log: TextEdit
@@ -50,12 +49,14 @@ var _build_menu_options: VBoxContainer
 var _build_menu_buttons: Dictionary = {}
 var _build_menu_cell: Vector2i = Vector2i(-1, -1)
 var _run_button: Button
+var _sound_button: Button
 var _speed_button: Button
 var _speed_menu: PanelContainer
+var _sound_menu: PanelContainer
 var _camera_controls_panel: PanelContainer
+var _zoom_label: Label
 var _selected_crew_ids: Array[String] = ["engineer", "medic", "botanist", "technician"]
 var _kinds: Array[String] = ["solar", "reactor", "oxygen_generator", "greenhouse", "laboratory"]
-var _consumption_per_crew: Dictionary = {}
 var _board_root: Node3D
 var _viewport_container: SubViewportContainer
 var _board_subviewport: SubViewport
@@ -68,7 +69,6 @@ var _last_rendered_snapshot: Dictionary = {}
 var _camera_pivot: Node3D
 var _camera: Camera3D
 var _camera_yaw: float = DEFAULT_CAMERA_YAW
-var _camera_pitch: float = DEFAULT_CAMERA_PITCH
 var _dragging_camera: bool = false
 var _last_mouse_position: Vector2 = Vector2.ZERO
 
@@ -86,7 +86,7 @@ func _ready() -> void:
 	title.text = "MarSins | Banco de simulación · tablero 3D isométrico"
 	root.add_child(title)
 	var help := Label.new()
-	help.text = "La tripulación se elige en su escena y puedes cambiarla con el botón superior. Pulsa una celda vacía para abrir construcciones.\nLas celdas oscurecidas forman el espacio reservado de cada edificio.\nPulsa un edificio para encender/apagar. Los temporizadores comienzan al iniciar.\nVista: arrastra con el botón derecho, usa la rueda o los iconos abajo a la derecha."
+	help.text = "La tripulación se elige en su escena y puedes cambiarla con el botón superior. Pulsa una celda vacía para abrir construcciones.\nLas celdas oscurecidas forman el espacio reservado de cada edificio. Pulsa un edificio para encender/apagar.\nCámara: A/D o ←/→ giran; W/S o ↑/↓ acercan/alejan. También puedes arrastrar con el botón derecho o usar la rueda.\nEspacio inicia/pausa, Esc o Tab abre el sonido, y R reinicia."
 	root.add_child(help)
 
 	var crew_row := HBoxContainer.new()
@@ -140,15 +140,9 @@ func _ready() -> void:
 	info.custom_minimum_size = Vector2(330, 0)
 	info.size_flags_horizontal = Control.SIZE_SHRINK_END
 	body.add_child(info)
-	_status = Label.new()
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.add_child(_status)
-	_requirements = Label.new()
-	_requirements.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.add_child(_requirements)
 	_message = Label.new()
-	_message.text = "Listo"
 	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_message.hide()
 	info.add_child(_message)
 	_log = TextEdit.new()
 	_log.editable = false
@@ -158,10 +152,10 @@ func _ready() -> void:
 	var loaded := Config.load_file()
 	if not loaded.ok:
 		_message.text = "Error de configuración: %s" % loaded
+		_message.show()
 		set_process(false)
 		return
 	_show_result(simulation.configure(loaded.data))
-	_consumption_per_crew = loaded.data.consumption_per_crew_per_sol.duplicate(true)
 	_building_definitions = loaded.data.buildings.duplicate(true)
 	simulation.state_updated.connect(_render)
 	_reset()
@@ -261,7 +255,7 @@ func _create_camera_controls(parent: Control) -> void:
 	_camera_controls_panel.anchor_right = 1.0
 	_camera_controls_panel.anchor_top = 1.0
 	_camera_controls_panel.anchor_bottom = 1.0
-	_camera_controls_panel.offset_left = -292.0
+	_camera_controls_panel.offset_left = -340.0
 	_camera_controls_panel.offset_top = -76.0
 	_camera_controls_panel.offset_right = -12.0
 	_camera_controls_panel.offset_bottom = -12.0
@@ -269,11 +263,19 @@ func _create_camera_controls(parent: Control) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 5)
 	_camera_controls_panel.add_child(row)
-	_add_icon_button(row, "←", "Girar izquierda", func() -> void: _rotate_camera(-PI / 4.0))
-	_add_icon_button(row, "→", "Girar derecha", func() -> void: _rotate_camera(PI / 4.0))
-	_add_icon_button(row, "+", "Acercar", func() -> void: _zoom_camera(-4.0))
-	_add_icon_button(row, "-", "Alejar", func() -> void: _zoom_camera(4.0))
+	_add_icon_button(row, "←", "Girar izquierda (A / ←)", func() -> void: _rotate_camera(-PI / 4.0))
+	_add_icon_button(row, "→", "Girar derecha (D / →)", func() -> void: _rotate_camera(PI / 4.0))
+	_add_icon_button(row, "+", "Acercar (W / ↑)", func() -> void: _zoom_camera(-CAMERA_ZOOM_STEP))
+	_zoom_label = Label.new()
+	_zoom_label.name = "ZoomPercentage"
+	_zoom_label.custom_minimum_size = Vector2(48.0, 44.0)
+	_zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_zoom_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_zoom_label.tooltip_text = "Nivel de acercamiento"
+	row.add_child(_zoom_label)
+	_add_icon_button(row, "-", "Alejar (S / ↓)", func() -> void: _zoom_camera(CAMERA_ZOOM_STEP))
 	_add_icon_button(row, "⟲", "Restablecer vista", _reset_camera)
+	_update_zoom_percentage()
 
 func _create_simulation_controls(parent: Control) -> void:
 	var panel := PanelContainer.new()
@@ -288,8 +290,9 @@ func _create_simulation_controls(parent: Control) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 5)
 	panel.add_child(row)
-	_add_icon_button(row, "↻", "Reiniciar partida", _reset)
+	_add_icon_button(row, "↻", "Reiniciar partida (R)", _reset)
 	_run_button = _add_icon_button(row, "▶", "Iniciar partida", _toggle_run_state)
+	_sound_button = _add_icon_button(row, "⚙", "Opciones de sonido (Esc / Tab)", _toggle_sound_menu)
 	_speed_button = Button.new()
 	_speed_button.text = "×1.0 ▸"
 	_speed_button.tooltip_text = "Velocidad de simulación"
@@ -317,6 +320,84 @@ func _create_simulation_controls(parent: Control) -> void:
 		speed_option.custom_minimum_size = Vector2(52.0, 44.0)
 		speed_option.pressed.connect(_select_speed.bind(speed))
 		speed_row.add_child(speed_option)
+	_create_sound_menu(parent)
+
+func _create_sound_menu(parent: Control) -> void:
+	_sound_menu = PanelContainer.new()
+	_sound_menu.name = "SoundOptions"
+	_sound_menu.anchor_top = 1.0
+	_sound_menu.anchor_bottom = 1.0
+	_sound_menu.offset_left = 12.0
+	_sound_menu.offset_top = -242.0
+	_sound_menu.offset_right = 322.0
+	_sound_menu.offset_bottom = -82.0
+	_sound_menu.visible = false
+	_sound_menu.z_index = 10
+	parent.add_child(_sound_menu)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 4)
+	_sound_menu.add_child(content)
+	var header := HBoxContainer.new()
+	content.add_child(header)
+	var title := Label.new()
+	title.text = "Opciones de sonido"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	var close_button := Button.new()
+	close_button.text = "×"
+	close_button.tooltip_text = "Cerrar opciones de sonido"
+	close_button.pressed.connect(_toggle_sound_menu)
+	header.add_child(close_button)
+	var saved_values := _get_sound_values()
+	_add_sound_slider_row(content, "master", "Master", saved_values)
+	_add_sound_slider_row(content, "music", "Music", saved_values)
+	_add_sound_slider_row(content, "sfx", "SFX", saved_values)
+
+func _add_sound_slider_row(parent: VBoxContainer, volume_key: String, title: String, values: Dictionary) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	parent.add_child(row)
+	var name_label := Label.new()
+	name_label.text = title
+	name_label.custom_minimum_size = Vector2(55.0, 0.0)
+	row.add_child(name_label)
+	var slider := HSlider.new()
+	slider.name = "%sVolumeSlider" % title
+	slider.min_value = 0.0
+	slider.max_value = 100.0
+	slider.step = 1.0
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value = float(values.get(volume_key, 0))
+	row.add_child(slider)
+	var percentage_label := Label.new()
+	percentage_label.custom_minimum_size = Vector2(42.0, 0.0)
+	percentage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	percentage_label.text = "%d%%" % roundi(slider.value)
+	row.add_child(percentage_label)
+	slider.value_changed.connect(_on_sound_value_changed.bind(volume_key, percentage_label))
+
+func _get_sound_values() -> Dictionary:
+	var saved_values: Variant = get_tree().root.get_meta(SOUND_VALUES_META, DEFAULT_SOUND_VALUES)
+	var values: Dictionary = DEFAULT_SOUND_VALUES.duplicate(true)
+	if saved_values is Dictionary:
+		for key: String in values.keys():
+			values[key] = clampi(roundi(float(saved_values.get(key, values[key]))), 0, 100)
+	return values
+
+func _on_sound_value_changed(value: float, volume_key: String, percentage_label: Label) -> void:
+	var percentage := clampi(roundi(value), 0, 100)
+	percentage_label.text = "%d%%" % percentage
+	var values := _get_sound_values()
+	values[volume_key] = percentage
+	get_tree().root.set_meta(SOUND_VALUES_META, values)
+
+func _toggle_sound_menu() -> void:
+	if _sound_menu == null:
+		return
+	if not _sound_menu.visible and _speed_menu.visible:
+		_speed_menu.hide()
+		_camera_controls_panel.show()
+	_sound_menu.visible = not _sound_menu.visible
 
 func _toggle_run_state() -> void:
 	var snapshot := simulation.get_snapshot()
@@ -327,11 +408,13 @@ func _toggle_run_state() -> void:
 			_show_result(simulation.set_paused(not snapshot.get("paused", false)))
 
 func _toggle_speed_menu() -> void:
+	_sound_menu.hide()
 	_speed_menu.visible = not _speed_menu.visible
 	_camera_controls_panel.visible = not _speed_menu.visible
 
 func _select_speed(speed: float) -> void:
 	_speed_menu.hide()
+	_sound_menu.hide()
 	_camera_controls_panel.show()
 	_show_result(simulation.set_speed(speed))
 
@@ -418,6 +501,7 @@ func _open_crew_selection() -> void:
 	if error_code != OK:
 		get_tree().root.remove_meta(SELECTED_CREW_META)
 		_message.text = "No se pudo abrir la selección de tripulación (%s)" % error_string(error_code)
+		_message.show()
 
 func _rotate_camera(amount: float) -> void:
 	_camera_yaw = wrapf(_camera_yaw + amount, -TAU, TAU)
@@ -427,19 +511,66 @@ func _zoom_camera(amount: float) -> void:
 	if _camera == null:
 		return
 	_camera.size = clampf(_camera.size + amount, CAMERA_MIN_SIZE, CAMERA_MAX_SIZE)
+	_update_zoom_percentage()
+
+func _update_zoom_percentage() -> void:
+	if _zoom_label == null:
+		return
+	if _camera == null:
+		_zoom_label.text = "0%"
+		return
+	var zoom_range: float = CAMERA_MAX_SIZE - CAMERA_MIN_SIZE
+	var zoom_progress: float = (CAMERA_MAX_SIZE - _camera.size) / zoom_range
+	var percentage := clampi(roundi(zoom_progress * 100.0), 0, 100)
+	_zoom_label.text = "%d%%" % percentage
 
 func _reset_camera() -> void:
 	_camera_yaw = DEFAULT_CAMERA_YAW
-	_camera_pitch = DEFAULT_CAMERA_PITCH
 	if _camera != null:
 		_camera.size = DEFAULT_CAMERA_SIZE
+	_update_zoom_percentage()
 	_update_camera()
 
 func _update_camera() -> void:
 	if _camera_pivot == null:
 		return
-	_camera_pitch = clampf(_camera_pitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH)
-	_camera_pivot.rotation = Vector3(_camera_pitch, _camera_yaw, 0.0)
+	_camera_pivot.rotation = Vector3(DEFAULT_CAMERA_PITCH, _camera_yaw, 0.0)
+
+func _input(event: InputEvent) -> void:
+	if not event is InputEventKey:
+		return
+	var key_event: InputEventKey = event as InputEventKey
+	if not key_event.pressed or key_event.echo:
+		return
+	if key_event.ctrl_pressed or key_event.alt_pressed or key_event.meta_pressed:
+		return
+	var overlay_open: bool = _sound_menu.visible or _speed_menu.visible or _build_menu.visible
+	match key_event.keycode:
+		KEY_ESCAPE, KEY_TAB:
+			_toggle_sound_menu()
+		KEY_SPACE:
+			_toggle_run_state()
+		KEY_R:
+			_reset()
+		KEY_A, KEY_LEFT:
+			if overlay_open:
+				return
+			_rotate_camera(-PI / 4.0)
+		KEY_D, KEY_RIGHT:
+			if overlay_open:
+				return
+			_rotate_camera(PI / 4.0)
+		KEY_W, KEY_UP:
+			if overlay_open:
+				return
+			_zoom_camera(-CAMERA_ZOOM_STEP)
+		KEY_S, KEY_DOWN:
+			if overlay_open:
+				return
+			_zoom_camera(CAMERA_ZOOM_STEP)
+		_:
+			return
+	get_viewport().set_input_as_handled()
 
 func _on_viewport_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -448,15 +579,17 @@ func _on_viewport_gui_input(event: InputEvent) -> void:
 			_last_mouse_position = event.position
 			get_viewport().set_input_as_handled()
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom_camera(-4.0)
+			_zoom_camera(-CAMERA_ZOOM_STEP)
 			get_viewport().set_input_as_handled()
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom_camera(4.0)
+			_zoom_camera(CAMERA_ZOOM_STEP)
 			get_viewport().set_input_as_handled()
 		elif event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			if _speed_menu.visible:
 				_speed_menu.hide()
 				_camera_controls_panel.show()
+			if _sound_menu.visible:
+				_sound_menu.hide()
 			_select_cell_at(_viewport_container.get_local_mouse_position())
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _dragging_camera:
@@ -464,7 +597,6 @@ func _on_viewport_gui_input(event: InputEvent) -> void:
 		var movement: Vector2 = motion_event.position - _last_mouse_position
 		_last_mouse_position = motion_event.position
 		_camera_yaw -= movement.x * 0.01
-		_camera_pitch = clampf(_camera_pitch + movement.y * 0.01, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH)
 		_update_camera()
 		get_viewport().set_input_as_handled()
 
@@ -550,6 +682,7 @@ func _select_cell_at(mouse_position: Vector2) -> void:
 	_cell_clicked(Vector2i(cell_x, cell_y))
 
 func _reset() -> void:
+	_reset_camera()
 	_show_result(simulation.reset_run(_selected_crew_ids, 1))
 
 func _cell_clicked(cell: Vector2i) -> void:
@@ -561,7 +694,12 @@ func _cell_clicked(cell: Vector2i) -> void:
 	_show_build_menu(cell)
 
 func _show_result(result: Dictionary) -> void:
-	_message.text = "OK · %s" % result.result if result.ok else "Rechazado: %s" % result.error_code
+	if result.ok:
+		_message.text = ""
+		_message.hide()
+	else:
+		_message.text = "Rechazado: %s" % result.error_code
+		_message.show()
 
 func _render(snapshot: Dictionary) -> void:
 	if not _last_rendered_snapshot.is_empty() and snapshot == _last_rendered_snapshot:
@@ -572,16 +710,16 @@ func _render(snapshot: Dictionary) -> void:
 	_run_button.disabled = snapshot.phase == "finished"
 	if snapshot.phase == "planning":
 		_run_button.text = "▶"
-		_run_button.tooltip_text = "Iniciar partida"
+		_run_button.tooltip_text = "Iniciar partida (Espacio)"
 	elif snapshot.phase == "running" and snapshot.paused:
 		_run_button.text = "▶"
-		_run_button.tooltip_text = "Continuar simulación"
+		_run_button.tooltip_text = "Continuar simulación (Espacio)"
 	elif snapshot.phase == "running":
 		_run_button.text = "⏸"
-		_run_button.tooltip_text = "Pausar simulación"
+		_run_button.tooltip_text = "Pausar simulación (Espacio)"
 	else:
 		_run_button.text = "▶"
-		_run_button.tooltip_text = "Partida terminada"
+		_run_button.tooltip_text = "Partida terminada · R para reiniciar"
 	_speed_button.disabled = snapshot.phase == "finished"
 	_speed_button.text = "×%.1f ▸" % snapshot.speed
 	if snapshot.phase == "finished":
@@ -593,13 +731,6 @@ func _render(snapshot: Dictionary) -> void:
 	_sol_label.text = "Soles transcurridos: %d" % int(snapshot.get("completed_sols", 0))
 	if _build_menu != null and _build_menu.visible:
 		_refresh_build_menu()
-	_status.text = "%s | Sol %d · %d s | ×%s | Pausa: %s\nPotencia %.1f / demanda %.1f" % [snapshot.phase, snapshot.sol, snapshot.elapsed_seconds, snapshot.speed, snapshot.paused, power.supply, power.demand]
-	var alive := 0
-	for member: Dictionary in snapshot.crew:
-		if member.alive:
-			alive += 1
-	_requirements.text = "Requeridos por sol (%d tripulantes): Aire %.1f · Agua %.1f · Comida %.1f" % [alive, _consumption_per_crew.get("air", 0.0) * alive, _consumption_per_crew.get("water", 0.0) * alive, _consumption_per_crew.get("food", 0.0) * alive]
-
 	var buildings_by_cell: Dictionary = {}
 	var reserved_cells: Dictionary = {}
 	for building: Dictionary in snapshot.buildings:
