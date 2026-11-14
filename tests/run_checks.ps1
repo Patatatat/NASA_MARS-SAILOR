@@ -19,6 +19,7 @@ try {
     $cases = @(
         @{ Name = 'import'; Args = '--headless --path . --editor --import' },
         @{ Name = 'simulation'; Args = '--headless --path . --script res://tests/test_simulation.gd' },
+        @{ Name = 'history'; Args = '--headless --path . --script res://tests/test_history_scroll.gd' },
         @{ Name = 'scene'; Args = '--headless --path . --quit-after 10' }
     )
     foreach ($case in $cases) {
@@ -38,6 +39,9 @@ try {
         }
         if ($case.Name -eq 'simulation' -and $output -notmatch 'SIMULATION_TESTS: \d+ checks, 0 failures') {
             throw 'Falta marcador de pruebas completas'
+        }
+        if ($case.Name -eq 'history' -and $output -notmatch 'UI_HISTORY_TESTS: 0 failures') {
+            throw 'Falta marcador de pruebas de historial completas'
         }
         Write-Output "PASS: $($case.Name)"
     }
