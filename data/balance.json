@@ -10,6 +10,10 @@
   "botanist_multiplier": 1.25,
   "technician_multiplier": 0.8,
   "scientist_upgrade_duration_multiplier": 0.75,
+  "summary": {
+    "window_sols": 2, "reserve_target_sols": 1, "resilience_neutral": 0.5,
+    "critical_health": 25, "critical_reserve_sols": 0.25, "max_causes": 4
+  },
   "maintenance": {
     "interval_sols": 4, "global_gap_seconds": 25, "max_pending": 2,
     "degrade_after_sols": 1, "shutdown_after_sols": 2, "shutdown_duration_sols": 2,

@@ -6,6 +6,12 @@ Incluye selección 4/6, mapa 3D isométrico 32×32 con huellas de edificios, gir
 
 ## Prueba manual
 
+Resolución base: **1600×900**, con ventana inicial de desarrollo de 1440×810 y HUD que se adapta al espacio. Usa **F11** o **Ajustes → Pantalla completa** para ampliar. La distribución se comprobó desde 1280×720 hasta 1920×1080; la futura página web debe dar al lienzo el área disponible. Falta verificar esa exportación en navegador real.
+
+El resumen final ya está disponible: al concluir cualquier partida se abre **Resumen** en el HUD, con veredicto, cuatro indicadores, tripulación, tendencia de reservas y hechos registrados. Se puede cerrar y volver a abrir desde la barra inferior. Andrés puede obtener la misma copia mediante `get_run_summary().result` y conectarla a su futura pantalla; el contrato explica sus campos y los pesos de puntaje.
+
+Para revisarlo rápidamente: continuar con los cuatro especialistas por defecto, iniciar sin construir y seleccionar ×4 hasta el relevo. Debe abrirse el resumen de derrota parcial, con supervivencia, salud, consumo de reservas y hechos medidos. Cerrar/reabrir Resumen debe conservar los datos; Reiniciar debe limpiar el resumen de la nueva partida. Esta secuencia sirve para verificar el informe, no como estrategia de supervivencia.
+
 1. Ejecutar con F5. La escena de selección inicia con cuatro especialistas elegidos; con tres o cinco, Continuar debe estar desactivado. Probar Cambiar tripulación desde el tablero y verificar que se conserva la selección.
 2. Elegir reactor (45 masa) y colocarlo en (18,15), oxígeno (20) en (4,1), invernadero (25) en (7,1). Deben quedar 10 de masa; temporizadores detenidos en planificación.
 3. Intentar un solar (15) en (10,1), colocar un reactor junto al hábitat (16,15) o elegir una casilla reservada del invernadero (6,1): debe rechazarse sin cobro.

@@ -1,5 +1,34 @@
 # Verificación de la base inicial
 
+Ampliación para escritorio/navegador: base 1600×900 (ventana inicial 1440×810), HUD adaptable y pantalla completa con F11/botón. Verificación más reciente: **407 comprobaciones de simulación, 168 de resumen y 50 de integración, 0 fallos**, más historial/importación/arranque. Los 15 casos nuevos comprueban viewport completo, límites del panel/barra y ausencia de cruces entre paneles/acciones/cámara en 1280×720, 1600×900 y 1920×1080. Captura OpenGL de 1600×900 revisada; persisten los mensajes de shader ya documentados. No se probó exportación web ni la solicitud real de fullscreen del navegador.
+
+## Resumen final de partida
+
+Verificación más reciente: **407 comprobaciones de simulación, 168 específicas del resumen y 35 de integración, 0 fallos**, más regresión del historial, importación y arranque headless correctos. Motor comprobado: `4.7.2.stable.official.ed1daf0bf`. Se ejecutó `./tests/run_checks.ps1 -GodotExe 'C:/Users/emili/Desktop/Godot_v4.7.2-stable_win64.exe/Godot_v4.7.2-stable_win64_console.exe'` con límites externos de 60 s por proceso; el runner ahora incorpora `tests/test_run_summary.gd` y exige su marcador de éxito.
+
+| Caso | Esperado independiente | Observado | Resultado |
+| --- | --- | --- | --- |
+| Partida de 5 s sin producción | Supervivencia 1, tripulación 1, sostenibilidad 0, neutral resiliencia .5 | Coincide | OK |
+| Aire/comida equilibrados, agua sin reponer | Indicador de sostenibilidad 2/3; agua −16 en ventana de 50 s | Coincide | OK |
+| Derrota por aire, 16 inicial y daño 20 | Tiempo 113 s; ventana exacta [63,113]; salud final cero | Coincide | OK |
+| Tormenta con reactor y reservas / sin potencia | Resiliencia 1 / 0; razón `habitat_unpowered` con medición | Coincide | OK |
+| Seis solicitudes, un reintento y una pendiente al relevo | 6 oportunidades, 5 resueltas sin crítico; valor 5/6 | Coincide, reintento no duplica | OK |
+| Muerte individual durante evento | Muerto aporta cero; tres vivos a 98.5 → componente .73875; evento crítico | Coincide, fixture sintético de salud previa para aislar transición | OK |
+| Evento activo al relevo | Pendiente, no se inventa resolución | Coincide | OK |
+| 300 s en un frame / 3000 × .1 s | Resúmenes idénticos; buffer limitado a 51 muestras | Coincide | OK |
+| Resumen externo modificado, reinicio y señales | Copia profunda; resumen disponible durante `run_finished`; reinicio borra el actual | Coincide | OK |
+| Evidencias y HUD | Causas enlazan a hechos/informes reales; final abre panel Resumen | Coincide | OK |
+
+Datos añadidos: `balance.json.summary`, con ventana, reserva objetivo, neutral, umbrales críticos y máximo de causas. Los costos y reglas económicas no cambiaron. El módulo `domain/run_summary.gd` genera valores normalizados y datos transferibles; la UI del HUD los consume y Andrés conserva el cálculo ponderado del puntaje. No se modificó el menú principal ni su escena.
+
+Se revisó una captura renderizada del panel final a 1100×760 (`local-only/summary-preview.png`). La ejecución gráfica conserva los mensajes de inicialización GLES3 ya descritos abajo; los checks headless no los presentan. Falta probar manualmente lectura/scroll del panel y la integración futura con la pantalla de resultados de Andrés. Los criterios son balance provisional, no una validación científica ni prueba de equilibrio entre estrategias.
+
+## Verificaciones anteriores
+
+Actualización de HUD: `scenes/simulation_lab.gd` reorganiza el tablero existente a ventana completa y controles superpuestos; se eliminan encabezado y columna de diagnóstico. Verificación actual: **407 comprobaciones de simulación, 24 de integración, regresión de historial, importación y arranque headless sin fallos**. La selección de edificio abre el inspector y requiere botón explícito para apagar. También se revisaron capturas OpenGL a 1100×760 con panel cerrado y ROBERTS abierto, guardadas solo en `local-only/`. La ejecución de captura emitió tres mensajes `shader_gles3.cpp:802` pese a generar ambas imágenes; no se declara validada toda la ruta gráfica ni la interacción física del ratón por esas capturas.
+
+Actualización de cámara/nitidez: **407 comprobaciones de simulación y 33 de integración, historial e importación/escena correctos**. El runner valida eventos de entrada de rueda pulsada, desplazamiento horizontal sin giro/zoom, liberación sobre HUD, pérdida de foco, centrado al restablecer y picking correcto tras desplazar. Comprueba resolución nativa del SubViewport y modelo de hábitat escalado a su huella. Se revisó una nueva captura OpenGL: edificio y etiquetas mayores, vista inicial más cercana, suavizado MSAA 8×; persisten los tres mensajes de inicialización de shaders anotados arriba. No se midieron FPS ni costo gráfico web; falta prueba manual del ratón.
+
 Fecha: 14 de noviembre de 2026. Motor real: `4.7.2.stable.official.ed1daf0bf` (comprobado con `--version`).
 
 Resultado actual de la integración: **407 comprobaciones de simulación y 20 de interfaz, 0 fallos**; regresión del historial, importación y escena headless aprobadas en Godot 4.7.2.

@@ -21,7 +21,7 @@ const TILE_SPACING := 1.5
 const TILE_SIZE := 1.42
 const DEFAULT_CAMERA_YAW := PI / 4.0
 const DEFAULT_CAMERA_PITCH := deg_to_rad(-35.264)
-const DEFAULT_CAMERA_SIZE := 64.0
+const DEFAULT_CAMERA_SIZE := 48.0
 const CAMERA_MIN_PITCH := deg_to_rad(-70.0)
 const CAMERA_MAX_PITCH := deg_to_rad(-10.0)
 const CAMERA_MIN_SIZE := 16.0
@@ -85,53 +85,238 @@ var _camera: Camera3D
 var _camera_yaw: float = DEFAULT_CAMERA_YAW
 var _camera_pitch: float = DEFAULT_CAMERA_PITCH
 var _dragging_camera: bool = false
+var _panning_camera: bool = false
 var _last_mouse_position: Vector2 = Vector2.ZERO
+var _hud_pages: Dictionary = {}
+var _hud_buttons: Dictionary = {}
+var _hud_drawer: PanelContainer
+var _drawer_title: Label
+var _crew_status: Label
+var _building_toggle: Button
+var _active_hud_panel: String = ""
+var _summary_view: HistoryPanel
+var _shown_summary_generation: int = -1
+var _action_dock: PanelContainer
+var _resource_hud: PanelContainer
+var _sol_hud: PanelContainer
+
+func _apply_hud_theme() -> void:
+	var hud_theme := Theme.new()
+	hud_theme.default_font_size = 17
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color(0.045, 0.075, 0.10, 0.95)
+	panel.border_color = Color("35505c")
+	panel.set_border_width_all(1)
+	panel.set_corner_radius_all(10)
+	panel.content_margin_left = 12
+	panel.content_margin_right = 12
+	panel.content_margin_top = 10
+	panel.content_margin_bottom = 10
+	hud_theme.set_stylebox("panel", "PanelContainer", panel)
+	for type_name: String in ["Button", "OptionButton"]:
+		for state: String in ["normal", "hover", "pressed", "disabled", "focus"]:
+			var style := panel.duplicate() as StyleBoxFlat
+			style.bg_color = Color("254853") if state in ["hover", "pressed"] else Color("122733")
+			if state == "focus":
+				style.bg_color = Color(0, 0, 0, 0)
+				style.border_color = Color("8fe0ce")
+			hud_theme.set_stylebox(state, type_name, style)
+	var field := panel.duplicate() as StyleBoxFlat
+	field.bg_color = Color("0c1922")
+	hud_theme.set_stylebox("normal", "TextEdit", field)
+	hud_theme.set_stylebox("normal", "LineEdit", field)
+	hud_theme.set_color("font_color", "Label", Color("e3eff0"))
+	theme = hud_theme
+
+func _hud_label(parent: Node) -> Label:
+	var label := Label.new()
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(label)
+	return label
+
+func _create_hud_workspace(parent: Control) -> void:
+	_event_status = Label.new()
+	_event_status.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_event_status.offset_left = 24
+	_event_status.offset_right = -270
+	_event_status.offset_top = 90
+	_event_status.offset_bottom = 138
+	_event_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_event_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_event_status)
+	_message = Label.new()
+	_message.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	_message.offset_left = 24
+	_message.offset_right = -24
+	_message.offset_top = -184
+	_message.offset_bottom = -144
+	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_message.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(_message)
+	var dock := PanelContainer.new()
+	_action_dock = dock
+	dock.name = "ActionDock"
+	dock.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	dock.offset_left = 12
+	dock.offset_right = -12
+	dock.offset_top = -138
+	dock.offset_bottom = -84
+	parent.add_child(dock)
+	var dock_scroll := ScrollContainer.new()
+	dock_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	dock.add_child(dock_scroll)
+	var dock_row := HBoxContainer.new()
+	dock_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dock_scroll.add_child(dock_row)
+	_add_button(dock_row, "Construir", _begin_build_placement)
+	_hud_drawer = PanelContainer.new()
+	_hud_drawer.name = "HUDWorkspace"
+	_hud_drawer.anchor_left = 1
+	_hud_drawer.anchor_right = 1
+	_hud_drawer.anchor_bottom = 1
+	_hud_drawer.offset_left = -410
+	_hud_drawer.offset_right = -12
+	_hud_drawer.offset_top = 146
+	_hud_drawer.offset_bottom = -190
+	_hud_drawer.hide()
+	parent.add_child(_hud_drawer)
+	var drawer_content := VBoxContainer.new()
+	_hud_drawer.add_child(drawer_content)
+	var header := HBoxContainer.new()
+	drawer_content.add_child(header)
+	_drawer_title = Label.new()
+	_drawer_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_drawer_title)
+	_add_button(header, "Cerrar ×", _close_hud_panel)
+	var pages := Control.new()
+	pages.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	drawer_content.add_child(pages)
+	var titles := {"base": "Base", "robots": "ROBERTS", "upgrades": "Mejoras", "maintenance": "Mantenimiento", "crew": "Tripulación", "history": "Historial", "summary": "Resumen", "settings": "Ajustes"}
+	for id: String in titles:
+		var button := Button.new()
+		button.text = titles[id]
+		button.toggle_mode = true
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(_toggle_hud_panel.bind(id))
+		dock_row.add_child(button)
+		_hud_buttons[id] = button
+		var page_scroll := ScrollContainer.new()
+		page_scroll.name = id
+		page_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		page_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		pages.add_child(page_scroll)
+		page_scroll.hide()
+		var content := VBoxContainer.new()
+		content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		content.add_theme_constant_override("separation", 10)
+		page_scroll.add_child(content)
+		_hud_pages[id] = content
+	_create_domain_controls(_hud_pages["base"])
+	_building_toggle = Button.new()
+	_building_toggle.text = "Encender / apagar edificio seleccionado"
+	_building_toggle.pressed.connect(_toggle_selected_building)
+	_hud_pages["base"].add_child(_building_toggle)
+
+func _toggle_hud_panel(id: String) -> void:
+	if _active_hud_panel == id:
+		_close_hud_panel()
+	else:
+		_open_hud_panel(id)
+
+func _begin_build_placement() -> void:
+	_close_hud_panel()
+	_build_menu.hide()
+	_message.text = "Selecciona una celda vacía del tablero para elegir una construcción."
+
+func _open_hud_panel(id: String) -> void:
+	_build_menu.hide()
+	_active_hud_panel = id
+	_hud_drawer.show()
+	_drawer_title.text = _hud_buttons[id].text
+	for page_id: String in _hud_pages:
+		_hud_pages[page_id].get_parent().visible = page_id == id
+		_hud_buttons[page_id].button_pressed = page_id == id
+
+func _close_hud_panel() -> void:
+	_active_hud_panel = ""
+	_hud_drawer.hide()
+	for button: Button in _hud_buttons.values():
+		button.button_pressed = false
+
+func _toggle_selected_building() -> void:
+	var selected := simulation.get_building_status(_inspected_id)
+	if selected.ok:
+		_show_result(simulation.set_enabled(_inspected_id, not selected.result.enabled))
+
+func _update_hud_layout() -> void:
+	if not is_instance_valid(_hud_drawer):
+		return
+	var compact := size.x < 1400
+	var margin := 16.0 if compact else 24.0
+	theme.default_font_size = 16 if compact else 18
+	var drawer_width := clampf(size.x * 0.30, 390.0, 560.0)
+	_hud_drawer.offset_left = -drawer_width - margin
+	_hud_drawer.offset_right = -margin
+	_hud_drawer.offset_top = margin + 150
+	_hud_drawer.offset_bottom = -222
+	_resource_hud.offset_left = margin
+	_resource_hud.offset_right = -margin
+	_resource_hud.offset_top = margin
+	_resource_hud.offset_bottom = margin + 74
+	_sol_hud.offset_left = -250 - margin
+	_sol_hud.offset_right = -margin
+	_sol_hud.offset_top = margin + 86
+	_sol_hud.offset_bottom = margin + 138
+	_event_status.offset_left = margin + 8
+	_event_status.offset_right = -286 - margin
+	_event_status.offset_top = margin + 86
+	_event_status.offset_bottom = margin + 146
+	_action_dock.offset_left = margin
+	_action_dock.offset_right = -margin
+	_action_dock.offset_top = -156
+	_action_dock.offset_bottom = -94
+	_message.offset_left = margin + 8
+	_message.offset_right = -margin - 8
+	_message.offset_top = -214
+	_message.offset_bottom = -166
+	_camera_controls_panel.offset_left = -300 - margin
+	_camera_controls_panel.offset_right = -margin
+	_camera_controls_panel.offset_top = -80
+	_camera_controls_panel.offset_bottom = -16
+	var time_controls: PanelContainer = get_node("HUD/SimulationControls")
+	time_controls.offset_left = margin
+	time_controls.offset_right = margin + 260
+	time_controls.offset_top = -80
+	time_controls.offset_bottom = -16
+	_speed_menu.offset_left = margin + 272
+	_speed_menu.offset_right = margin + 530
+	_speed_menu.offset_top = -80
+	_speed_menu.offset_bottom = -16
+	_build_menu.position = Vector2(margin, margin + 150)
+
+func _toggle_fullscreen() -> void:
+	var mode := DisplayServer.window_get_mode()
+	var fullscreen := mode in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fullscreen else DisplayServer.WINDOW_MODE_FULLSCREEN)
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F11:
+		_toggle_fullscreen()
+		get_viewport().set_input_as_handled()
 
 func _ready() -> void:
 	_load_selected_crew()
-	var root := VBoxContainer.new()
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 20
-	root.offset_top = 16
-	root.offset_right = -20
-	root.offset_bottom = -16
-	add_child(root)
-
-	var title := Label.new()
-	title.text = "MarSins | Banco de simulación · tablero 3D isométrico"
-	root.add_child(title)
-	var help := Label.new()
-	help.text = "La tripulación se elige en su escena y puedes cambiarla con el botón superior. Pulsa una celda vacía para abrir construcciones.\nLas celdas oscurecidas forman el espacio reservado de cada edificio.\nPulsa un edificio para encender/apagar. Los temporizadores comienzan al iniciar.\nVista: arrastra con el botón derecho, usa la rueda o los iconos abajo a la derecha."
-	root.add_child(help)
-
-	var crew_row := HBoxContainer.new()
-	root.add_child(crew_row)
-	var crew_summary := Label.new()
-	crew_summary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	crew_summary.text = _selected_crew_summary()
-	crew_row.add_child(crew_summary)
-	var change_crew_button := Button.new()
-	change_crew_button.text = "Cambiar tripulación"
-	change_crew_button.tooltip_text = "Volver a la selección de personajes"
-	change_crew_button.pressed.connect(_open_crew_selection)
-	crew_row.add_child(change_crew_button)
-	var pending := Label.new()
-	pending.text = "Eventos, ROBERTS y mejoras activos. Mantenimiento: controles de prueba hasta integrar minijuegos."
-	root.add_child(pending)
-
-	var body := HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root.add_child(body)
-
+	_apply_hud_theme()
 	var board_view := Control.new()
-	board_view.custom_minimum_size = Vector2(610, 500)
-	board_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	board_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	board_view.name = "WorldView"
+	board_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	board_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	body.add_child(board_view)
+	add_child(board_view)
 	_viewport_container = SubViewportContainer.new()
 	_viewport_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_viewport_container.stretch = true
+	_viewport_container.stretch_shrink = 1
 	_viewport_container.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	_viewport_container.gui_input.connect(_on_viewport_gui_input)
 	board_view.add_child(_viewport_container)
@@ -140,38 +325,22 @@ func _ready() -> void:
 	_board_subviewport.own_world_3d = true
 	_board_subviewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	_board_subviewport.physics_object_picking = false
-	_board_subviewport.msaa_3d = Viewport.MSAA_4X
+	_board_subviewport.msaa_3d = Viewport.MSAA_8X
 	_viewport_container.add_child(_board_subviewport)
 	_create_isometric_board(_board_subviewport)
-	_create_resource_hud(board_view)
-	_create_sol_hud(board_view)
-	_create_build_menu(board_view)
-	_create_camera_controls(board_view)
-	_create_simulation_controls(board_view)
-
-	var info_scroll := ScrollContainer.new()
-	info_scroll.custom_minimum_size.x = 400
-	info_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	body.add_child(info_scroll)
-	var info := VBoxContainer.new()
-	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info_scroll.add_child(info)
-	_status = Label.new()
-	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.add_child(_status)
-	_requirements = Label.new()
-	_requirements.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.add_child(_requirements)
-	_message = Label.new()
-	_message.text = "Listo"
-	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.add_child(_message)
-	_create_domain_controls(info)
-	_log = HistoryPanel.new()
-	_log.custom_minimum_size.y = 220
-	_log.editable = false
-	_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	info.add_child(_log)
+	var hud := Control.new()
+	hud.name = "HUD"
+	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(hud)
+	_create_resource_hud(hud)
+	_create_sol_hud(hud)
+	_create_build_menu(hud)
+	_create_camera_controls(hud)
+	_create_simulation_controls(hud)
+	_create_hud_workspace(hud)
+	resized.connect(_update_hud_layout)
+	_update_hud_layout()
 
 	var loaded := Config.load_file()
 	if not loaded.ok:
@@ -191,6 +360,7 @@ func _process(delta: float) -> void:
 
 func _create_resource_hud(parent: Control) -> void:
 	var panel := PanelContainer.new()
+	_resource_hud = panel
 	panel.name = "ResourceHUD"
 	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	panel.offset_left = 12
@@ -203,7 +373,7 @@ func _create_resource_hud(parent: Control) -> void:
 	row.add_theme_constant_override("separation", 12)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(row)
-	for key: String in ["mass", "air", "water", "food", "energy"]:
+	for key: String in ["mass", "air", "water", "food", "regolith", "energy"]:
 		var label := Label.new()
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -216,6 +386,7 @@ func _create_resource_hud(parent: Control) -> void:
 
 func _create_sol_hud(parent: Control) -> void:
 	var panel := PanelContainer.new()
+	_sol_hud = panel
 	panel.name = "SolHUD"
 	panel.anchor_left = 1.0
 	panel.anchor_right = 1.0
@@ -235,7 +406,7 @@ func _create_sol_hud(parent: Control) -> void:
 func _create_build_menu(parent: Control) -> void:
 	_build_menu = PanelContainer.new()
 	_build_menu.name = "BuildMenu"
-	_build_menu.position = Vector2(12.0, 86.0)
+	_build_menu.position = Vector2(12.0, 146.0)
 	_build_menu.custom_minimum_size = Vector2(300.0, 0.0)
 	_build_menu.visible = false
 	parent.add_child(_build_menu)
@@ -353,6 +524,7 @@ func _add_icon_button(parent: Node, icon: String, tooltip: String, callback: Cal
 	return button
 
 func _show_build_menu(cell: Vector2i) -> void:
+	_close_hud_panel()
 	_build_menu_cell = cell
 	_build_menu_title.text = "Construir en (%d, %d)" % [cell.x, cell.y]
 	_build_menu.show()
@@ -395,7 +567,7 @@ func _place_selected_building(kind: String) -> void:
 		_refresh_build_menu()
 
 func _resource_name(key: String) -> String:
-	var names: Dictionary = {"mass": "Masa", "air": "Aire", "water": "Agua", "food": "Comida", "energy": "Energía"}
+	var names: Dictionary = {"mass": "Masa", "air": "Aire", "water": "Agua", "food": "Comida", "regolith": "Regolito", "energy": "Potencia"}
 	return str(names.get(key, key.capitalize()))
 
 func _load_selected_crew() -> void:
@@ -438,6 +610,10 @@ func _zoom_camera(amount: float) -> void:
 func _reset_camera() -> void:
 	_camera_yaw = DEFAULT_CAMERA_YAW
 	_camera_pitch = DEFAULT_CAMERA_PITCH
+	_dragging_camera = false
+	_panning_camera = false
+	if _camera_pivot != null:
+		_camera_pivot.position = Vector3.ZERO
 	if _camera != null:
 		_camera.size = DEFAULT_CAMERA_SIZE
 	_update_camera()
@@ -450,8 +626,14 @@ func _update_camera() -> void:
 
 func _on_viewport_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			_panning_camera = event.pressed
+			_dragging_camera = false
+			_last_mouse_position = event.position
+			get_viewport().set_input_as_handled()
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			_dragging_camera = event.pressed
+			_panning_camera = false
 			_last_mouse_position = event.position
 			get_viewport().set_input_as_handled()
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -466,6 +648,10 @@ func _on_viewport_gui_input(event: InputEvent) -> void:
 				_camera_controls_panel.show()
 			_select_cell_at(_viewport_container.get_local_mouse_position())
 			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _panning_camera:
+		_pan_camera(_last_mouse_position, event.position)
+		_last_mouse_position = event.position
+		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _dragging_camera:
 		var motion_event: InputEventMouseMotion = event as InputEventMouseMotion
 		var movement: Vector2 = motion_event.position - _last_mouse_position
@@ -474,6 +660,37 @@ func _on_viewport_gui_input(event: InputEvent) -> void:
 		_camera_pitch = clampf(_camera_pitch + movement.y * 0.01, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH)
 		_update_camera()
 		get_viewport().set_input_as_handled()
+
+func _input(event: InputEvent) -> void:
+	# Soltar sobre un panel del HUD también debe terminar el arrastre.
+	if event is InputEventMouseButton and not event.pressed:
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			_panning_camera = false
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			_dragging_camera = false
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		_panning_camera = false
+		_dragging_camera = false
+
+func _camera_ground_point(screen_position: Vector2) -> Variant:
+	if _camera == null or _viewport_container.size.x <= 0 or _viewport_container.size.y <= 0:
+		return null
+	var position_in_viewport := screen_position * Vector2(_board_subviewport.size) / _viewport_container.size
+	var origin := _camera.project_ray_origin(position_in_viewport)
+	var direction := _camera.project_ray_normal(position_in_viewport)
+	return Plane(Vector3.UP, TILE_SURFACE_Y).intersects_ray(origin, direction)
+
+func _pan_camera(from: Vector2, to: Vector2) -> void:
+	var previous: Variant = _camera_ground_point(from)
+	var current: Variant = _camera_ground_point(to)
+	if not previous is Vector3 or not current is Vector3:
+		return
+	var offset: Vector3 = previous - current
+	var limit := GRID_SIZE * TILE_SPACING * 0.5
+	_camera_pivot.position.x = clampf(_camera_pivot.position.x + offset.x, -limit, limit)
+	_camera_pivot.position.z = clampf(_camera_pivot.position.z + offset.z, -limit, limit)
 
 func _create_isometric_board(viewport: SubViewport) -> void:
 	_board_root = Node3D.new()
@@ -486,7 +703,7 @@ func _create_isometric_board(viewport: SubViewport) -> void:
 	environment.background_color = Color("202b38")
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	environment.ambient_light_color = Color("dce5ef")
-	environment.ambient_light_energy = 0.8
+	environment.ambient_light_energy = 0.55
 	environment_node.environment = environment
 	_board_root.add_child(environment_node)
 
@@ -504,7 +721,7 @@ func _create_isometric_board(viewport: SubViewport) -> void:
 
 	var light := DirectionalLight3D.new()
 	light.rotation_degrees = Vector3(-55.0, -35.0, 0.0)
-	light.light_energy = 1.2
+	light.light_energy = 1.0
 	light.shadow_enabled = true
 	_board_root.add_child(light)
 
@@ -557,6 +774,7 @@ func _select_cell_at(mouse_position: Vector2) -> void:
 	_cell_clicked(Vector2i(cell_x, cell_y))
 
 func _reset() -> void:
+	_close_hud_panel()
 	_inspected_id = "b1"
 	_show_result(simulation.reset_run(_selected_crew_ids, int(_seed.value)))
 	_maintenance_session = ""
@@ -566,13 +784,13 @@ func _cell_clicked(cell: Vector2i) -> void:
 		if cell in simulation.get_building_footprint_cells(str(building.kind), Vector2i(int(building.x), int(building.y))):
 			_build_menu.hide()
 			_inspected_id = building.id
-			_show_result(simulation.set_enabled(building.id, not building.enabled))
+			_open_hud_panel("base")
 			_render_domain(simulation.get_snapshot())
 			return
 	_show_build_menu(cell)
 
 func _show_result(result: Dictionary) -> void:
-	_message.text = "OK · %s" % result.result if result.ok else _error_text(result.error_code)
+	_message.text = "Orden aplicada." if result.ok else _error_text(result.error_code)
 
 func _render(snapshot: Dictionary) -> void:
 	if not _last_rendered_snapshot.is_empty() and snapshot == _last_rendered_snapshot:
@@ -598,10 +816,11 @@ func _render(snapshot: Dictionary) -> void:
 	if snapshot.phase == "finished":
 		_speed_menu.hide()
 		_camera_controls_panel.show()
-	for key: String in ["mass", "air", "water", "food"]:
+	for key: String in ["mass", "air", "water", "food", "regolith"]:
 		_resource_labels[key].text = "%s: %.1f" % [_resource_name(key), resources[key]]
 	_resource_labels["energy"].text = "Energía: %.1f / %.1f" % [power.supply, power.demand]
-	_sol_label.text = "Soles transcurridos: %d" % int(snapshot.get("completed_sols", 0))
+	var phase_name: String = {"planning": "Planificación", "running": "En curso", "finished": "Finalizada"}[snapshot.phase]
+	_sol_label.text = "%s · Sol %d" % [phase_name, snapshot.sol]
 	if _build_menu != null and _build_menu.visible:
 		_refresh_build_menu()
 	_status.text = "%s | Sol %d · %d s | ×%s | Pausa: %s\nPotencia %.1f / demanda %.1f" % [snapshot.phase, snapshot.sol, snapshot.elapsed_seconds, snapshot.speed, snapshot.paused, power.supply, power.demand]
@@ -651,7 +870,7 @@ func _render(snapshot: Dictionary) -> void:
 		var state := "%ds" % building.remaining_seconds if building.remaining_seconds > 0 else ("ON" if building.powered else "OFF")
 		var short_names := {"habitat": "HÁBITAT", "solar": "SOLAR", "reactor": "REACTOR", "oxygen_generator": "OXÍGENO", "greenhouse": "CULTIVO", "laboratory": "LAB"}
 		_cell_labels[index].text = "%s N%d\n%s%s" % [short_names.get(kind, kind.to_upper()), building.level, state, " ↑%.1f" % building.upgrade_remaining_work if building.upgrade_remaining_work > 0 else ""]
-		_cell_labels[index].position.y = 1.05
+		_cell_labels[index].position.y = _cell_visuals[index].scale.y * 1.15 + 0.2
 		if building.warning != "":
 			_cell_materials[index].albedo_color = Color("c76d58")
 		elif building.remaining_seconds > 0:
@@ -663,12 +882,15 @@ func _render(snapshot: Dictionary) -> void:
 		else:
 			_cell_materials[index].albedo_color = Color("958c7d")
 	_render_domain(snapshot)
+	if snapshot.phase == "finished" and _shown_summary_generation != snapshot.run_generation:
+		_shown_summary_generation = snapshot.run_generation
+		_open_hud_panel("summary")
 
 func _create_building_label() -> Label3D:
 	var label := Label3D.new()
-	label.font_size = 96
-	label.outline_size = 12
-	label.pixel_size = 0.009
+	label.font_size = 64
+	label.outline_size = 8
+	label.pixel_size = 0.016
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	label.modulate = Color("f7f3e9")
@@ -706,6 +928,9 @@ func _create_building_visual(kind: String) -> Node3D:
 		"laboratory":
 			_add_box(root, Vector3(0.7, 0.52, 0.66), Vector3(0.0, 0.36, 0.0), Color("8292a0"))
 			_add_box(root, Vector3(0.48, 0.12, 0.48), Vector3(0.0, 0.68, 0.0), Color("c5d3d8"))
+	var model_width: float = {"habitat": 0.72, "solar": 1.32, "reactor": 0.7, "oxygen_generator": 0.62, "greenhouse": 0.82, "laboratory": 0.7}.get(kind, 1.0)
+	var factor := float(simulation.get_building_footprint_size(kind)) * TILE_SPACING * 0.75 / model_width
+	root.scale = Vector3.ONE * factor
 	return root
 
 func _add_box(parent: Node3D, size: Vector3, position: Vector3, color: Color) -> MeshInstance3D:
@@ -747,60 +972,121 @@ func _make_material(color: Color) -> StandardMaterial3D:
 	material.roughness = 0.82
 	return material
 
-func _create_domain_controls(root: VBoxContainer) -> void:
-	_add_button(root, "Reiniciar partida", _reset)
-	_seed = SpinBox.new()
-	_seed.min_value = 0
-	_seed.max_value = 1000000
-	_seed.value = 1
-	_seed.prefix = "Semilla "
-	root.add_child(_seed)
-	var missions := VBoxContainer.new()
-	root.add_child(missions)
+func _create_domain_controls(_root: VBoxContainer) -> void:
+	var base: VBoxContainer = _hud_pages["base"]
+	_status = _hud_label(base)
+	_requirements = _hud_label(base)
+	_add_button(base, "Refugio / salir", func() -> void: _show_result(simulation.set_sheltered(not simulation.get_snapshot().get("sheltered", false))))
+	_add_button(base, "Enterrar hábitat · 10 masa + 20 regolito", func() -> void: _show_result(simulation.bury_habitat()))
+	_inspector = _hud_label(base)
+	_building_history = HistoryPanel.new()
+	_building_history.custom_minimum_size.y = 180
+	base.add_child(_building_history)
+	var missions: VBoxContainer = _hud_pages["robots"]
 	_robot_choice = OptionButton.new()
 	_robot_choice.add_item("ROBERT 1")
 	_robot_choice.add_item("ROBERT 2")
 	missions.add_child(_robot_choice)
 	_destination_choice = OptionButton.new()
-	for name: String in ["Hielo → agua", "Cantera → regolito", "Restos → masa"]:
-		_destination_choice.add_item(name)
+	for destination_name: String in ["Hielo → agua", "Cantera → regolito", "Restos → masa"]:
+		_destination_choice.add_item(destination_name)
 	missions.add_child(_destination_choice)
-	_add_button(missions, "Enviar (2 potencia, 2 soles)", _send_robert)
-	_add_button(missions, "Refugio / salir", func() -> void: _show_result(simulation.set_sheltered(not simulation.get_snapshot().get("sheltered", false))))
-	_add_button(missions, "Enterrar (10 masa + 20 regolito)", func() -> void: _show_result(simulation.bury_habitat()))
-	_robot_status = Label.new()
-	_robot_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(_robot_status)
-	var upgrades := VBoxContainer.new()
-	root.add_child(upgrades)
+	_add_button(missions, "Enviar · 2 potencia durante 2 soles", _send_robert)
+	_robot_status = _hud_label(missions)
+	var upgrades: VBoxContainer = _hud_pages["upgrades"]
 	_upgrade_choice = OptionButton.new()
 	upgrades.add_child(_upgrade_choice)
 	_add_button(upgrades, "Mejorar a nivel 2", _upgrade)
-	_upgrade_status = Label.new()
-	_upgrade_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_upgrade_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	upgrades.add_child(_upgrade_status)
-	var maintenance_row := VBoxContainer.new()
-	root.add_child(maintenance_row)
+	_upgrade_status = _hud_label(upgrades)
+	var maintenance: VBoxContainer = _hud_pages["maintenance"]
+	_hud_label(maintenance).text = "Mantenimiento · adaptador de prueba hasta integrar los minijuegos."
 	_maintenance_choice = OptionButton.new()
-	maintenance_row.add_child(_maintenance_choice)
-	_add_button(maintenance_row, "Atender", _begin_maintenance)
-	_add_button(maintenance_row, "Prueba: éxito", func() -> void: _maintenance_result(true))
-	_add_button(maintenance_row, "Prueba: fallo", func() -> void: _maintenance_result(false))
-	_add_button(maintenance_row, "Abandonar", func() -> void: _maintenance_result(false, true))
-	_add_button(maintenance_row, "Reactivar", _reactivate)
-	_maintenance_status = Label.new()
-	_maintenance_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(_maintenance_status)
-	_inspector = Label.new()
-	_inspector.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(_inspector)
-	_building_history = HistoryPanel.new()
-	_building_history.custom_minimum_size.y = 140
-	root.add_child(_building_history)
-	_event_status = Label.new()
-	_event_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(_event_status)
+	maintenance.add_child(_maintenance_choice)
+	_add_button(maintenance, "Atender", _begin_maintenance)
+	_add_button(maintenance, "Prueba: éxito", func() -> void: _maintenance_result(true))
+	_add_button(maintenance, "Prueba: fallo", func() -> void: _maintenance_result(false))
+	_add_button(maintenance, "Abandonar", func() -> void: _maintenance_result(false, true))
+	_add_button(maintenance, "Reactivar", _reactivate)
+	_maintenance_status = _hud_label(maintenance)
+	var crew: VBoxContainer = _hud_pages["crew"]
+	_crew_status = _hud_label(crew)
+	_add_button(crew, "Cambiar tripulación", _open_crew_selection)
+	var settings: VBoxContainer = _hud_pages["settings"]
+	_hud_label(settings).text = "Semilla para la próxima partida"
+	_seed = SpinBox.new()
+	_seed.min_value = 0
+	_seed.max_value = 1000000
+	_seed.value = 1
+	settings.add_child(_seed)
+	_add_button(settings, "Reiniciar partida", _reset)
+	_add_button(settings, "Restablecer cámara", _reset_camera)
+	_add_button(settings, "Pantalla completa · F11", _toggle_fullscreen)
+	_hud_label(settings).text = "Celda vacía: construir. Edificio: inspeccionar.
+Botón derecho: girar vista. Rueda pulsada + arrastrar: desplazar. Rueda: acercar/alejar."
+	_log = HistoryPanel.new()
+	_log.custom_minimum_size = Vector2(0, 320)
+	_hud_pages["history"].add_child(_log)
+	_summary_view = HistoryPanel.new()
+	_summary_view.add_theme_color_override("font_readonly_color", Color("e3eff0"))
+	_summary_view.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	_summary_view.custom_minimum_size = Vector2(0, 340)
+	_summary_view.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_hud_pages["summary"].size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_hud_pages["summary"].add_child(_summary_view)
+
+func _render_run_summary(snapshot: Dictionary, reset_position: bool) -> void:
+	if snapshot.run_summary.is_empty():
+		_summary_view.update_history("El resumen de la misión estará disponible al finalizar la partida.", reset_position)
+		return
+	var report: Dictionary = snapshot.run_summary
+	var verdict: String = {"relief_achieved": "Relevo logrado", "partial_defeat": "Derrota parcial", "total_defeat": "Derrota total"}[report.verdict]
+	var lines: PackedStringArray = [verdict, "Tiempo: %d / %d segundos" % [report.elapsed_seconds, report.target_seconds], "", "INDICADORES DE MISIÓN"]
+	var names := {"survival": "Supervivencia", "crew": "Tripulación", "sustainability": "Sostenibilidad", "resilience": "Resiliencia"}
+	for id: String in names:
+		lines.append("%s: %.1f%%" % [names[id], float(report.components[id]) * 100.0])
+	if report.resilience.neutral_used:
+		lines.append("Sin oportunidades de crisis: resiliencia neutral.")
+	else:
+		lines.append("Respuestas sin estado crítico: %d / %d" % [report.resilience.successful_without_critical, report.resilience.total])
+	lines.append("\nTRIPULACIÓN · %d supervivientes" % report.crew.alive)
+	for member: Dictionary in report.crew.members:
+		lines.append("%s: %.1f salud · %.1f dosis%s" % [CREW_NAMES[member.id], member.health, member.dose, " · fallecido" if not member.alive else ""])
+	lines.append("\nRESERVAS · últimos %d segundos" % report.sustainability.window_seconds)
+	for resource: String in ["air", "water", "food"]:
+		var stock: Dictionary = report.sustainability.resources[resource]
+		lines.append("%s: %.1f · tendencia %+.1f / sol" % [_resource_name(resource), stock.closing, stock.net_per_sol])
+	lines.append("\nHECHOS DE LA MISIÓN")
+	for cause: Dictionary in report.causes:
+		lines.append("• " + _summary_cause_text(cause, snapshot))
+	_summary_view.update_history("\n".join(lines), reset_position)
+
+func _summary_cause_text(cause: Dictionary, snapshot: Dictionary) -> String:
+	var target: String = cause.target
+	for building: Dictionary in snapshot.buildings:
+		if building.id == target:
+			target = str(BUILDING_NAMES.get(building.kind, "Hábitat"))
+	match cause.kind:
+		"crew_resource_deficit":
+			return "Faltaron %.1f unidades de %s para la tripulación." % [cause.amount, _resource_name(cause.target).to_lower()]
+		"maintenance_shutdown":
+			return "%s se apagó por mantenimiento pendiente." % target
+		"robert_lost":
+			return "%s se perdió en una expedición%s." % [target, " expuesta a tormenta" if cause.details.storm_exposed else ""]
+		"building_blocked":
+			var reasons := {"water_shortage": "sin agua", "power_shortage": "sin potencia", "disabled": "apagado por orden del jugador"}
+			return "%s estuvo %s durante %d segundos." % [target, reasons.get(cause.reason, cause.reason), cause.duration_seconds]
+		"robert_returned":
+			var cargo: PackedStringArray = []
+			for resource: String in cause.details.cargo:
+				cargo.append("%.1f %s" % [cause.details.cargo[resource], _resource_name(resource).to_lower()])
+			return "%s entregó %s." % [target, ", ".join(cargo)]
+		"maintenance_success":
+			return "Se completó el mantenimiento de %s." % target
+		"upgrade_completed":
+			return "%s alcanzó el nivel 2." % target
+		"habitat_buried":
+			return "El enterramiento del hábitat quedó terminado."
+	return "Hecho registrado: " + cause.kind
 
 func _add_button(parent: Node, text: String, callback: Callable) -> void:
 	var button := Button.new()
@@ -866,6 +1152,7 @@ func _error_text(code: String) -> String:
 
 func _render_domain(snapshot: Dictionary) -> void:
 	var new_run: bool = snapshot.run_generation != _history_generation
+	_render_run_summary(snapshot, new_run)
 	_history_generation = snapshot.run_generation
 	var r: Dictionary = snapshot.resources
 	var previous_maintenance := str(_maintenance_choice.get_item_metadata(_maintenance_choice.selected)) if _maintenance_choice.selected >= 0 else ""
@@ -884,6 +1171,8 @@ func _render_domain(snapshot: Dictionary) -> void:
 	var inspection: Dictionary = simulation.get_building_status(_inspected_id)
 	if inspection.ok:
 		var status: Dictionary = inspection.result
+		_building_toggle.disabled = status.kind == "habitat" or snapshot.phase == "finished"
+		_building_toggle.text = "Apagar edificio" if status.enabled else "Encender edificio"
 		_inspector.text = "Inspector %s · %s N%d · potencia %.1f / demanda %.1f · aire %.1f / comida %.1f por sol · aviso %s" % [status.id, status.kind, status.level, status.power_output, status.power_demand, status.effective_production_per_sol.air, status.effective_production_per_sol.food, status.warning]
 		var history: PackedStringArray = ["Historial del edificio " + status.id]
 		for entry: Dictionary in status.local_log:
@@ -893,7 +1182,7 @@ func _render_domain(snapshot: Dictionary) -> void:
 	var event_text := "ninguno"
 	if not snapshot.event.is_empty():
 		event_text = "%s (%s, inicio %ds, fin %ds)" % [snapshot.event.kind, snapshot.event.state, snapshot.event.start_seconds, snapshot.event.end_seconds]
-	_event_status.text = "Pronóstico: tormenta %d%% · partículas %d%% | Evento: %s | Refugio: %s | Hábitat: %s" % [roundi(snapshot.forecast.storm.probability * 100), roundi(snapshot.forecast.solar_particles.probability * 100), event_text, snapshot.sheltered, snapshot.burial.state]
+	_event_status.text = "Tormenta %d%% · Partículas %d%%\n%s · Refugio: %s" % [roundi(snapshot.forecast.storm.probability * 100), roundi(snapshot.forecast.solar_particles.probability * 100), event_text, "activo" if snapshot.sheltered else "inactivo"]
 	var destination: String = ["ice", "quarry", "wreckage"][_destination_choice.selected]
 	var preview: Dictionary = simulation.preview_robert("robert_%d" % (_robot_choice.selected + 1), destination)
 	_destination_choice.tooltip_text = "Carga %s %s · riesgo actual %.1f%% (puede subir por tormenta)" % [preview.result.amount, preview.result.resource, preview.result.loss_probability * 100] if preview.ok else _error_text(preview.error_code)
@@ -915,6 +1204,7 @@ func _render_domain(snapshot: Dictionary) -> void:
 	var lines: PackedStringArray = []
 	for member: Dictionary in snapshot.crew:
 		lines.append("%s: %.1f salud · %.2f dosis" % [member.id, member.health, member.dose])
+	_crew_status.text = _selected_crew_summary() + "\n\n" + "\n".join(lines)
 	lines.append("Regolito: %.1f" % r.regolith)
 	for robot: Dictionary in snapshot.roberts:
 		if robot.state == "on_mission":

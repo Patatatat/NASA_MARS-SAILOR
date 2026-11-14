@@ -48,6 +48,19 @@ static func validate(value: Variant) -> Dictionary:
 	return {"ok": true, "error_code": "", "data": data.duplicate(true)}
 
 static func _validate_systems(data: Dictionary) -> String:
+	if not data.get("summary") is Dictionary:
+		return "summary"
+	var summary: Dictionary = data.summary
+	if not _integer(summary.get("window_sols"), 1) or float(summary.window_sols) > 12:
+		return "summary.window_sols"
+	if not _number(summary.get("reserve_target_sols"), 0.001):
+		return "summary.reserve_target_sols"
+	if not _probability(summary.get("resilience_neutral")) or not _probability(summary.get("critical_reserve_sols")):
+		return "summary.ratios"
+	if not _number(summary.get("critical_health"), 0) or float(summary.critical_health) > 100:
+		return "summary.critical_health"
+	if not _integer(summary.get("max_causes"), 1) or float(summary.max_causes) > 4:
+		return "summary.max_causes"
 	if not data.get("maintenance") is Dictionary:
 		return "maintenance"
 	var maintenance: Dictionary = data.maintenance

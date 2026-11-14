@@ -1,10 +1,10 @@
-# Contrato de simulación · eventos y ROBERTS
+# Contrato de simulación · resumen final v1
 
 ## Integración de interfaz y simulación
 
 La decisión confirmada por Rafael al integrar sustituye el mapa original: **32×32 y huellas de varias celdas**, con el tablero 3D de Andrés. Se conservan tiempos, costos y sistemas actuales de simulación. F5 abre `crew_selection.tscn`; la selección muestra las probabilidades configuradas antes de elegir equipo y pasa cuatro IDs validados a `simulation_lab.tscn`.
 
-El tablero conserva giro/zoom, menú de construcción y HUD. El panel lateral desplazable añade los controles existentes de ROBERTS, refugio, enterramiento, mejoras, sesiones de mantenimiento, inspector e informes. Un clic en cualquier celda ocupada identifica al edificio por su huella. Los resultados éxito/fallo son controles de prueba explícitos hasta integrar los minijuegos de Luque. Los historiales conservan posición de lectura y se limpian al reiniciar.
+El tablero conserva giro, desplazamiento, zoom, menú de construcción y HUD superpuesto. Sus paneles desplegables añaden ROBERTS, refugio, enterramiento, mejoras, sesiones de mantenimiento, inspector, historial y resumen final. Un clic en cualquier celda ocupada identifica al edificio por su huella. Los resultados éxito/fallo son controles de prueba explícitos hasta integrar los minijuegos de Luque. Los historiales conservan posición de lectura y se limpian al reiniciar.
 
 Esta guía corresponde al código ejecutable de la base inicial. El plan vigente y el diseño v0.4 orientan el alcance; `local-only/Especificaciones/00-main-handoff.md` y `01-interface-guide.md` son referencias históricas locales, no incluidas en el repositorio. No se cargan sus JSON. Este incremento no completa el juego del fin de semana.
 
@@ -19,6 +19,7 @@ No requiere autoloads. La instancia es un `RefCounted` independiente de escenas.
 | `configure(data: Dictionary)` | Valida y copia datos; solo antes de inicializar la partida. Para otra configuración crear otra instancia. |
 | `reset_run(crew_ids: Array, run_seed: int = 1)` | Exactamente 4 IDs únicos de los 6 disponibles. Reinicia reloj, edificios, registro, salud y final. Error conserva la partida anterior. |
 | `get_catalog()` / `get_snapshot()` | Copias profundas de configuración / estado. |
+| `get_run_summary()` | Respuesta estándar con `result` = resumen final v1; errores `not_initialized` / `not_finished` si todavía no existe. No muta y se puede consultar durante `run_finished`. |
 | `preview_placement(kind: String, cell: Vector2i)` | Comprueba huella completa, límites, tipo, distancia y presupuesto; devuelve costo y duración sin mutar. |
 | `place_building(kind: String, cell: Vector2i)` | Revalida, cobra una sola vez y reserva la huella; retorna `result.building_id`. |
 | `get_building_footprint_size(kind: String)` / `get_building_footprint_cells(kind, anchor)` | Consulta el lado en celdas y todas las coordenadas ocupadas por un edificio. |
@@ -155,7 +156,74 @@ El handoff antiguo aporta separación de UI/dominio, inspector y explicación ca
 
 Para historiales de UI, `scenes/history_panel.gd` es un `TextEdit` de lectura con `update_history(content, reset_position=false)`: conserva desplazamiento al recibir datos y retiene la rueda dentro del panel. La escena técnica lo usa para los hechos globales y para el historial del inspector. Reinicia posición únicamente al cambiar de partida/edificio; el contrato del dominio no cambió con esta corrección.
 
-## Integración en el repositorio del equipo
+## Resumen final v1 · contrato para Andrés
+
+`domain/run_summary.gd` concentra las mediciones y normalización. La simulación genera y congela el resumen una vez por partida, antes de emitir `state_updated`/`run_finished`. El snapshot terminado lo incluye en `run_summary`; `get_run_summary().result` entrega otra copia profunda. En planificación/partida activa, ese campo está vacío y el getter devuelve `not_finished`. Reiniciar elimina historial, oportunidades y resumen de la nueva partida. Una copia ya obtenida puede trasladarse a otra escena: no contiene nodos ni referencias a la simulación.
+
+Uso al finalizar:
+
+```gdscript
+func _on_run_finished(_result: Dictionary) -> void:
+    var response: Dictionary = simulation.get_run_summary()
+    if response.ok:
+        var summary: Dictionary = response.result
+        # Guardar o pasar esta copia a la pantalla final de Andrés.
+        show_report(summary)
+```
+
+`show_report` representa el consumidor de UI, no un método del dominio. La escena de partida actual ya ofrece una vista sencilla en el panel **Resumen**, que se abre al terminar y se puede cerrar/reabrir. No altera el menú principal. La lectura es válida dentro de señales; los comandos de mutación siguen bloqueados durante publicación.
+
+| Campo | Contenido |
+| --- | --- |
+| `schema_version`, `seed`, `run_generation` | Versión del contrato, semilla y sesión de partida. |
+| `verdict`, `elapsed_seconds`, `target_seconds` | Veredicto autoritativo y tiempos simulados. No inferir victoria del puntaje. |
+| `components` | `survival`, `crew`, `sustainability`, `resilience`: cuatro floats de 0 a 1. |
+| `crew` | Vivos, cuatro plazas, salud media contando muertos como cero, miembros con salud/dosis acumulada/dosis reducida total. No atribuir toda esa reducción únicamente al médico. |
+| `sustainability` | Inicio/fin, duración real evaluada, ventana deseada, mediciones y valor por recurso. |
+| `resilience` | Oportunidades con IDs/hechos, total, resueltas, pendientes, éxitos sin crítico y uso del neutral. |
+| `final_resources`, `final_power`, `deficits`, `metrics`, `roberts` | Cantidades/medidas finales; unidades abstractas del juego. |
+| `timeline`, `facts` | Informes por sol, incluido tramo parcial si hubo derrota anticipada, y registro completo de hechos para resolver IDs sin conservar la instancia de simulación. |
+| `causes` | Hasta cuatro hechos explicativos estructurados, con `fact_ids` y/o `sol_refs`. |
+| `criteria` | Copia de los umbrales `balance.json.summary` usados para obtener estos valores. |
+
+### Normalización provisional (ajustable por balance)
+
+- Supervivencia: `elapsed_seconds / target_seconds`, limitado a 0–1.
+- Tripulación: suma de salud de miembros vivos / 400. Cada muerto aporta cero; no dividir solo entre supervivientes. Salud y dosis se muestran por separado.
+- Sostenibilidad: muestreo cada segundo lógico; ventana exacta de los últimos `window_sols × sol_seconds` segundos, por defecto 50. Si la derrota llega antes, se usa el tiempo realmente vivido. Se conserva una muestra de apertura y las muestras de cierre, sin incluir dos veces el tramo parcial del último sol.
+- Para cada recurso vital: demanda media = promedio de consumo de tripulantes vivos por sol en esas muestras; disponibilidad = promedio de `clamp(reserva / (demanda × reserve_target_sols), 0, 1)` en cada cierre. La demanda no incluye riego. Sin vivos, la disponibilidad de ese paso es cero; si la demanda configurada es cero pero hay vivos, vale 1 con reserva positiva y 0 sin ella.
+- Tendencia neta por sol = `(reserva_final − reserva_apertura) × sol_seconds / duración_evaluada`. Incluye retornos reales de ROBERTS; no representa exclusivamente producción local.
+- Valor de tendencia = `clamp(1 + tendencia_neta / demanda_media, 0, 1)`. Si demanda media es cero: 1 para tendencia no negativa, 0 para negativa. Valor del recurso = disponibilidad × valor de tendencia. Sostenibilidad = media de aire/agua/comida. Un stock grande que solo cae al ritmo de todo el consumo no recibe puntuación alta por acumulación.
+- Resiliencia: un evento cuenta solo cuando llega a `active`, no por su pronóstico/aviso ni por `skipped`. Se resuelve cuando termina. Cada solicitud de mantenimiento cuenta una vez por `request_id`; fallos/reintentos/abandono no crean oportunidades nuevas. Éxito o reactivación resuelven la solicitud; un apagado mantiene la marca crítica aunque se reactive después.
+- Estado crítico durante una oportunidad: cualquier muerte, un vivo con salud ≤25, hábitat sin potencia, un faltante nuevo de recursos o una reserva vital ≤0.25 soles de consumo de la tripulación. Los umbrales son datos del JSON. Las oportunidades resueltas se consideran exitosas solo si nunca entraron en crítico. Puede ser preparación exitosa sin un botón de respuesta, por ejemplo reactor sosteniendo la base durante tormenta.
+- Resiliencia = éxitos sin crítico / oportunidades totales. Las que siguen pendientes al relevo/derrota permanecen en el denominador; no se inventa su resolución. Sin oportunidades: valor neutral configurado 0.5 y `neutral_used=true`.
+
+Cada oportunidad conserva `critical_reasons`, `first_critical_seconds` y una `critical_snapshot` de reservas, tripulación, déficits y potencia del hábitat al observar el primer estado crítico. Los códigos incluyen `habitat_unpowered`, `crew_death`, `low_crew_health`, `low_reserve_<recurso>`, `deficit_<recurso>` y `maintenance_shutdown`. Una muerte individual no queda ocultada por la salud alta de los otros supervivientes. Estos diagnósticos permiten explicar el indicador sin reconstruir una partida hipotética.
+
+Andrés aplica los pesos acordados **35/25/20/20** y los rangos en su pantalla. El dominio no calcula un puntaje total ni lo usa para cambiar el veredicto. Ejemplo de consumo, no otra regla de simulación:
+
+```gdscript
+var c: Dictionary = summary.components
+var score: int = roundi(100.0 * (0.35 * c.survival + 0.25 * c.crew + 0.20 * c.sustainability + 0.20 * c.resilience))
+```
+
+### Hechos explicativos
+
+`causes` selecciona en orden determinista: faltantes de aire/agua/comida, apagados de mantenimiento, ROBERTS perdidos, bloqueos por agua/potencia/apagado manual y, si queda espacio, retornos/mantenimiento exitoso/mejoras/enterramiento. No compara magnitudes de unidades distintas ni afirma que sean un análisis causal exhaustivo.
+
+`kind` puede ser `crew_resource_deficit`, `maintenance_shutdown`, `robert_lost`, `building_blocked`, `robert_returned`, `maintenance_success`, `upgrade_completed`, `habitat_buried`. La UI traduce esos códigos. Un bloqueo incluye `reason` y `duration_seconds`; una transacción incluye `details` del hecho original. Los IDs de `fact_ids` se resuelven en `facts`, y `sol_refs` en `timeline`. No afirmar que un robot se perdió *por* la tormenta solo porque `storm_exposed=true`; sí que la expedición perdida estuvo expuesta. Tampoco convertir dosis reducida en «muertes evitadas».
+
+## Archivos a integrar
+
+Presentación para navegador de escritorio: base lógica **1600×900**, escalado `canvas_items` con aspecto `expand`. La ventana de desarrollo abre a 1440×810; el área efectiva del navegador la determina el lienzo de la página anfitriona. El HUD se recalcula al redimensionar: texto de 16/18 px según ancho, panel lateral de 390–560 px y separación entre recursos, avisos, acciones y cámara. Comprobado geométricamente en 1280×720, 1600×900 y 1920×1080; no implica validación móvil ni de una exportación web.
+
+F11 o **Ajustes → Pantalla completa** alternan el modo de ventana. En web, ese botón se debe activar desde el gesto del usuario; el comportamiento y tamaño final deben probarse en el alojamiento/navegador real. Las reglas de simulación y el resumen no cambian con el tamaño. Los paneles de historial y resumen aprovechan la altura disponible y mantienen scroll propio.
+
+La pantalla de partida usa ahora `WorldView` a ventana completa y un `HUD` superpuesto, sin encabezado ni columna gris de diagnóstico. Recursos y potencia permanecen arriba; tiempo/velocidad y cámara abajo. La barra de acciones abre un único panel a la vez para Base, ROBERTS, Mejoras, Mantenimiento, Tripulación, Historial o Ajustes. Construir indica seleccionar una celda vacía y abre su menú contextual. Semilla y reinicio siguen accesibles en Ajustes; selección de equipo conserva su escena.
+
+Cámara: rueda pulsada + arrastrar desplaza sobre el plano del tablero; botón derecho + arrastrar gira; girar la rueda cambia zoom. El desplazamiento usa rayos de cámara para seguir el cursor con cualquier orientación/zoom y queda limitado al área del mapa. Soltar sobre HUD o perder foco libera el arrastre. Restablecer vista recupera centro, giro y zoom. Vista inicial de 48 unidades, render del SubViewport sin reducción (`stretch_shrink=1`), MSAA 8×. Los modelos ocupan aproximadamente 75% del ancho de su huella lógica; las etiquetas se elevan sobre su altura. Esto no cambia costos, celdas reservadas ni reglas de colocación. El aumento de antialiasing debe medirse en la futura exportación web.
+
+Seleccionar un edificio ahora abre Base/inspector **sin apagarlo**. La acción Encender/Apagar es un botón explícito del inspector. Los comandos del dominio no cambian. Las pruebas de integración verifican la nueva interacción, el viewport a tamaño completo y exclusión de paneles; las de historial abren su panel antes de desplazar. Mantenimiento conserva sus controles de prueba hasta integrar las escenas reales de Luque.
 
 Al integrar, conservar los `.gd.uid` generados y los cambios en `domain/`, `data/balance.json`, `tests/` y esta guía. La escena técnica es opcional. Andrés debe combinar el `project.godot` con el suyo; no sobrescribir su escena principal. Ignorar `.godot/`, `local-only/` y archivos temporales. Este incremento no hace commit ni push.
 

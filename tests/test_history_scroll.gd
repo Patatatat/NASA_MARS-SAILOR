@@ -9,6 +9,7 @@ func _run() -> void:
 	var lab: Control = load("res://scenes/simulation_lab.tscn").instantiate()
 	root.add_child(lab)
 	lab.set_process(false)
+	lab._open_hud_panel("history")
 	await process_frame
 	await process_frame
 	var snapshot: Dictionary = lab.simulation.get_snapshot()
@@ -30,6 +31,7 @@ func _run() -> void:
 	_check(absf(lab._log.scroll_vertical - previous) < 0.01, "refrescar el mismo estado no reinicia scroll")
 	_check(lab._log.get_line_count() >= 120, "se conserva el historial completo, no solo doce hechos")
 	var building_lines: PackedStringArray = []
+	lab._open_hud_panel("base")
 	for i: int in range(80):
 		building_lines.append("hecho del edificio %d" % i)
 	lab._building_history.update_history("\n".join(building_lines))

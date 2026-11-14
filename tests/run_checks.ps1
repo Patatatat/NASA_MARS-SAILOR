@@ -19,6 +19,7 @@ try {
     $cases = @(
         @{ Name = 'import'; Args = '--headless --path . --editor --import' },
         @{ Name = 'simulation'; Args = '--headless --path . --script res://tests/test_simulation.gd' },
+        @{ Name = 'summary'; Args = '--headless --path . --script res://tests/test_run_summary.gd' },
         @{ Name = 'history'; Args = '--headless --path . --script res://tests/test_history_scroll.gd' },
         @{ Name = 'integration'; Args = '--headless --path . --script res://tests/test_interface_integration.gd' },
         @{ Name = 'scene'; Args = '--headless --path . --quit-after 10' }
@@ -43,6 +44,9 @@ try {
         }
         if ($case.Name -eq 'history' -and $output -notmatch 'UI_HISTORY_TESTS: 0 failures') {
             throw 'Falta marcador de pruebas de historial completas'
+        }
+        if ($case.Name -eq 'summary' -and $output -notmatch 'RUN_SUMMARY_TESTS: \d+ checks, 0 failures') {
+            throw 'Falta marcador de pruebas de resumen completas'
         }
         if ($case.Name -eq 'integration' -and $output -notmatch 'UI_INTEGRATION_TESTS: \d+ checks, 0 failures') {
             throw 'Falta marcador de pruebas de integración completas'

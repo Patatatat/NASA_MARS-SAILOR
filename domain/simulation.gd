@@ -11,6 +11,7 @@ signal sol_report_ready(report: Dictionary)
 const Config = preload("res://domain/simulation_config.gd")
 const Maintenance = preload("res://domain/maintenance_system.gd")
 const SolReport = preload("res://domain/sol_report.gd")
+const RunSummary = preload("res://domain/run_summary.gd")
 const SPECIALISTS := ["engineer", "medic", "botanist", "scientist", "geologist", "technician"]
 const POWER_ORDER := ["habitat", "oxygen_generator", "greenhouse", "laboratory", "solar", "reactor"]
 const BUILDING_FOOTPRINTS := {
@@ -77,6 +78,7 @@ func reset_run(crew_ids: Array, run_seed: int = 1) -> Dictionary:
 	_state.run_generation = _run_generation
 	_state.sol_reports = []
 	_state.current_sol_report = SolReport.open(_state)
+	RunSummary.initialize(_state)
 	_maintenance.reset(_state, _config, _run_generation)
 	for id: String in ["robert_1", "robert_2"]:
 		_state.roberts.append({"id": id, "state": "available", "mission_id": "", "destination": "", "return_seconds": 0, "storm_exposed": false})
@@ -91,6 +93,7 @@ func reset_run(crew_ids: Array, run_seed: int = 1) -> Dictionary:
 	var habitat_center := int((_config.grid_size - 1) / 2)
 	_state.buildings.append(_building("b1", "habitat", Vector2i(habitat_center, habitat_center), 0))
 	_resolve_power()
+	RunSummary.sample(_state, _config)
 	_publish()
 	return _reply(true)
 
@@ -99,6 +102,13 @@ func get_snapshot() -> Dictionary:
 
 func get_catalog() -> Dictionary:
 	return _config.duplicate(true)
+
+func get_run_summary() -> Dictionary:
+	if _state.is_empty():
+		return _reply(false, "not_initialized")
+	if _state.phase != "finished":
+		return _reply(false, "not_finished")
+	return _reply(true, "", {}, _state.run_summary)
 
 func begin_maintenance(building_id: String) -> Dictionary:
 	return _maintenance_command("begin", [building_id])
@@ -489,6 +499,7 @@ func _tick() -> void:
 	_state.completed_sols = int(_state.elapsed_seconds / int(_config.sol_seconds))
 	_state.sol = mini(_state.completed_sols + 1, int(_config.target_sols))
 	_resolve_power()
+	RunSummary.sample(_state, _config)
 	if sol_ended:
 		_close_sol_report(false)
 	if _alive_count() == 0:
@@ -675,6 +686,7 @@ func _record(reason: String, target: String, details: Dictionary) -> void:
 	_state.log.append({"id": "d%d" % (_state.log.size() + 1), "seconds": _state.elapsed_seconds,
 		"reason": reason, "target": target, "details": details.duplicate(true)})
 	_state.current_sol_report.fact_ids.append(_state.log[-1].id)
+	RunSummary.observe(_state, reason, target, details, _state.log[-1].id)
 
 func _finish(verdict: String) -> void:
 	if _state.elapsed_seconds % int(_config.sol_seconds) != 0:
@@ -683,6 +695,7 @@ func _finish(verdict: String) -> void:
 	_accumulator = 0.0
 	_state.result = {"verdict": verdict, "elapsed_seconds": _state.elapsed_seconds, "alive": _alive_count()}
 	_record("run_finished", "", _state.result)
+	_state.run_summary = RunSummary.build(_state, _config)
 
 func _publish() -> void:
 	# Evita que un consumidor reentre y cambie el dominio en mitad de una notificación.
