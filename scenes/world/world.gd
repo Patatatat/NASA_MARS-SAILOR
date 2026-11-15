@@ -1,6 +1,24 @@
 class_name MartianWorld
 extends Node3D
 
+const BUILDING_MODELS := {
+	"base": preload("res://assets/3D assests/3D_assets/MainBase.glb"),
+	"isru": preload("res://assets/3D assests/3D_assets/ISRU.glb"),
+	"greenhouse": preload("res://assets/3D assests/3D_assets/GreenHouse.glb"),
+	"solar_panel": preload("res://assets/3D assests/3D_assets/SolarPanel.glb"),
+	"battery": preload("res://assets/3D assests/3D_assets/Battery.glb"),
+	"laboratory": preload("res://assets/3D assests/3D_assets/Laboratory.glb"),
+	"mine": preload("res://assets/3D assests/3D_assets/Mine.glb"),
+	"refinery": preload("res://assets/3D assests/3D_assets/Refinery.glb"),
+	"printer_3d": preload("res://assets/3D assests/3D_assets/3DPrinter.glb"),
+	"reactor": preload("res://assets/3D assests/3D_assets/NuclearReactor.glb"),
+	"landing_pad": preload("res://assets/3D assests/3D_assets/LandingPad.glb")
+}
+const TUNNEL_STRAIGHT: PackedScene = preload("res://assets/3D assests/3D_assets/TunnelStraight.glb")
+const TUNNEL_CORNER: PackedScene = preload("res://assets/3D assests/3D_assets/TunnelIntersectionCorner.glb")
+const TUNNEL_T: PackedScene = preload("res://assets/3D assests/3D_assets/TunnelIntersectionT.glb")
+const TUNNEL_CROSS: PackedScene = preload("res://assets/3D assests/3D_assets/TunnelIntersection.glb")
+
 signal target_selected(target_id: StringName)
 signal placement_requested(request: GameContracts.PlacementRequest)
 
@@ -210,6 +228,141 @@ func _add_building_visual(id: StringName) -> void:
 	var status := building_service.get_status(id)
 	var origin: Array = item["origin"]
 	var size: Array = item["size"]
+	var building_type := String(item["type"])
+	var packed_scene: PackedScene = BUILDING_MODELS.get(building_type)
+	var rotation_y := 0.0
+	if building_type == "tunnel":
+		var tunnel_model := _tunnel_model(Vector2i(int(origin[0]), int(origin[1])))
+		packed_scene = tunnel_model["scene"] as PackedScene
+		rotation_y = float(tunnel_model["rotation"])
+	if packed_scene != null:
+		var model := packed_scene.instantiate() as Node3D
+		if model != null:
+			model.name = String(id)
+			model.rotation.y = rotation_y
+			buildings_root.add_child(model)
+			if _fit_model_to_footprint(model, origin, size):
+				_apply_model_status(model, status, item)
+				return
+			model.queue_free()
+	_add_fallback_building_visual(id, item, status, origin, size)
+
+func _fit_model_to_footprint(model: Node3D, origin: Array, size: Array) -> bool:
+	var bounds := _model_bounds(model)
+	if bounds.size.x <= 0.001 or bounds.size.z <= 0.001:
+		return false
+	var target_width := maxf(0.5, float(size[0]) * 0.9)
+	var target_depth := maxf(0.5, float(size[1]) * 0.9)
+	var scale_factor := minf(target_width / bounds.size.x, target_depth / bounds.size.z)
+	if not is_finite(scale_factor) or scale_factor <= 0.0:
+		return false
+	model.scale = Vector3.ONE * scale_factor
+	var local_center := Vector3(bounds.position.x + bounds.size.x * 0.5, 0.0,
+		bounds.position.z + bounds.size.z * 0.5)
+	var center_offset := model.transform.basis * local_center
+	model.position = Vector3(float(origin[0]) + float(size[0]) * 0.5 - center_offset.x,
+		0.025 - bounds.position.y * scale_factor,
+		float(origin[1]) + float(size[1]) * 0.5 - center_offset.z)
+	return true
+
+func _model_bounds(model: Node3D) -> AABB:
+	var combined := AABB()
+	var has_point := false
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance == null or mesh_instance.mesh == null:
+			continue
+		var mesh_bounds := mesh_instance.get_aabb()
+		for x in range(2):
+			for y in range(2):
+				for z in range(2):
+					var corner := mesh_bounds.position + Vector3(
+						mesh_bounds.size.x * float(x), mesh_bounds.size.y * float(y),
+						mesh_bounds.size.z * float(z))
+					var local_point := model.to_local(mesh_instance.to_global(corner))
+					if has_point:
+						combined = combined.expand(local_point)
+					else:
+						combined = AABB(local_point, Vector3.ZERO)
+						has_point = true
+	return combined
+
+func _apply_model_status(model: Node3D, status: BuildingStatus, item: Dictionary) -> void:
+	var tint := Color(0.0, 0.0, 0.0, 0.0)
+	if status.condition == &"breached" or status.condition == &"destroyed" or item.get("crop") == "dead":
+		tint = Color(0.85, 0.12, 0.08, 0.42)
+	elif item.get("crop") == "wilting":
+		tint = Color(0.9, 0.55, 0.08, 0.35)
+	elif status.demand > 0.0 and not status.powered:
+		tint = Color(0.015, 0.02, 0.04, 0.48)
+	if tint.a <= 0.0:
+		return
+	var overlay := StandardMaterial3D.new()
+	overlay.albedo_color = tint
+	overlay.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	overlay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	overlay.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mesh_instance := node as MeshInstance3D
+		if mesh_instance != null:
+			mesh_instance.material_overlay = overlay
+
+func _tunnel_model(origin: Vector2i) -> Dictionary:
+	var connections := _tunnel_connections(origin)
+	var scene: PackedScene = TUNNEL_STRAIGHT
+	var base_directions: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0)]
+	if connections.size() >= 4:
+		scene = TUNNEL_CROSS
+		base_directions = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+	elif connections.size() == 3:
+		scene = TUNNEL_T
+		base_directions = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
+	elif connections.size() == 2:
+		if connections[0] + connections[1] == Vector2i.ZERO:
+			scene = TUNNEL_STRAIGHT
+			base_directions = [Vector2i(1, 0), Vector2i(-1, 0)]
+		else:
+			scene = TUNNEL_CORNER
+			base_directions = [Vector2i(0, -1), Vector2i(1, 0)]
+	var turns := _tunnel_rotation_to_match(base_directions, connections)
+	return {"scene": scene, "rotation": float(turns) * PI * 0.5}
+
+func _tunnel_connections(origin: Vector2i) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var directions: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
+	var instances: Dictionary = GameState.data.get("buildings", {}).get("instances", {})
+	for direction in directions:
+		var neighbor := origin + direction
+		for id in instances:
+			var item: Dictionary = instances[id]
+			if item.get("type", "") not in ["tunnel", "base"]:
+				continue
+			if grid_service._rect(item).has_point(neighbor):
+				result.append(direction)
+				break
+	return result
+
+func _tunnel_rotation_to_match(base: Array[Vector2i], desired: Array[Vector2i]) -> int:
+	if desired.is_empty():
+		return 0
+	for turns in range(4):
+		var rotated: Array[Vector2i] = []
+		for direction in base:
+			var value := direction
+			for _turn in range(turns):
+				value = Vector2i(value.y, -value.x)
+			rotated.append(value)
+		var matches_all := true
+		for wanted in desired:
+			if not rotated.has(wanted):
+				matches_all = false
+				break
+		if matches_all and rotated.size() == desired.size():
+			return turns
+	return 0
+
+func _add_fallback_building_visual(id: StringName, item: Dictionary, status: BuildingStatus,
+		origin: Array, size: Array) -> void:
 	var height := 0.25 if item["type"] in ["solar_panel", "tunnel", "landing_pad"] else (1.7 if item["type"] == "reactor" else 0.9)
 	var visual := MeshInstance3D.new()
 	visual.name = String(id)

@@ -3,6 +3,7 @@ extends Node
 
 const SAVE_SLOT := &"autosave"
 const DEMO_SEED := 20261114
+const PAUSE_MENU_SCENE: PackedScene = preload("res://scenes/ui/settings_menu.tscn")
 
 @onready var world: MartianWorld = $World
 @onready var menu: MainMenu = $Interface/MainMenu
@@ -24,13 +25,23 @@ var events := EventService.new()
 var rockets := RocketService.new()
 var dialogue := DialogueService.new()
 var services: Dictionary = {}
+var pause_menu: SettingsMenu
+var _paused_before_menu := false
 
 func _ready() -> void:
+	pause_menu = PAUSE_MENU_SCENE.instantiate() as SettingsMenu
+	$Interface.add_child(pause_menu)
+	pause_menu.hide()
 	_wire_services()
 	menu.start_requested.connect(_start_new)
 	menu.continue_requested.connect(_continue_game)
 	hud.save_requested.connect(_save_game)
 	hud.menu_requested.connect(_return_to_menu)
+	hud.pause_requested.connect(_open_pause_menu)
+	hud.settings_requested.connect(_open_game_settings)
+	pause_menu.back_requested.connect(_close_pause_menu)
+	pause_menu.main_menu_requested.connect(_return_to_menu)
+	pause_menu.save_requested.connect(_save_from_pause_menu)
 	SignalBus.sol_ended.connect(_autosave)
 	SignalBus.game_over.connect(_autosave_after_result)
 	world.configure(building, grid)
@@ -133,14 +144,41 @@ func _continue_game() -> void:
 
 func _save_game() -> void:
 	var result := SaveService.save_to_slot(SAVE_SLOT)
-	hud.show_message(LocalizationDB.translate_key(&"ui.saved" if result == OK else &"ui.save_failed"))
+	if result != OK:
+		hud.show_message(LocalizationDB.translate_key(&"ui.save_failed"))
 
 func _return_to_menu() -> void:
 	if SaveService.save_to_slot(SAVE_SLOT) != OK:
 		hud.show_message(LocalizationDB.translate_key(&"ui.save_failed"))
 		return
+	pause_menu.hide()
 	GameClock.set_paused(true)
+	menu.show_main_menu()
 	_show_menu()
+
+func _open_pause_menu() -> void:
+	if pause_menu.visible or not GameState.is_running():
+		return
+	_paused_before_menu = bool(GameClock.get_snapshot().get("paused", false))
+	GameClock.set_paused(true)
+	pause_menu.open_pause_menu()
+
+func _open_game_settings() -> void:
+	if pause_menu.visible or not GameState.is_running():
+		return
+	_paused_before_menu = bool(GameClock.get_snapshot().get("paused", false))
+	GameClock.set_paused(true)
+	pause_menu.open_game_settings()
+
+func _close_pause_menu() -> void:
+	pause_menu.hide()
+	GameClock.set_paused(_paused_before_menu)
+	hud.rebuild_from_state()
+
+func _save_from_pause_menu() -> void:
+	var result := SaveService.save_to_slot(SAVE_SLOT)
+	if result != OK:
+		pause_menu.show_feedback(LocalizationDB.translate_key(&"ui.save_failed"))
 
 func _autosave(sol: int) -> void:
 	if sol % 7 == 0:
@@ -150,6 +188,7 @@ func _autosave_after_result(_result: StringName) -> void:
 	SaveService.save_to_slot(SAVE_SLOT)
 
 func _show_menu() -> void:
+	pause_menu.hide()
 	menu.refresh_availability()
 	menu.visible = true
 	hud.visible = false
@@ -157,6 +196,7 @@ func _show_menu() -> void:
 	world.process_mode = Node.PROCESS_MODE_DISABLED
 
 func _show_game() -> void:
+	pause_menu.hide()
 	menu.visible = false
 	world.visible = true
 	world.process_mode = Node.PROCESS_MODE_INHERIT

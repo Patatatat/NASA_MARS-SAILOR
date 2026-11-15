@@ -3,6 +3,8 @@ extends Control
 
 signal save_requested()
 signal menu_requested()
+signal pause_requested()
+signal settings_requested()
 
 var services: Dictionary = {}
 var world: Node
@@ -15,7 +17,7 @@ var _report: SolReportView
 var _admin: AdminPanel
 var _final: FinalResultView
 var _save_button: Button
-var _menu_button: Button
+var _pause_button: Button
 var _map_space: Control
 var _dock: VBoxContainer
 var _dock_title: Label
@@ -43,6 +45,7 @@ func _ready() -> void:
 	_vitals = VitalStatusBar.new()
 	status_column.add_child(_vitals)
 	_time = TimeControls.new()
+	_time.settings_requested.connect(func(): settings_requested.emit())
 	status_column.add_child(_time)
 	var center := UiHelpers.row(column)
 	center.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -77,7 +80,8 @@ func _ready() -> void:
 	_admin = AdminPanel.new()
 	_mount_view("admin", _admin)
 	_guide = GuideCard.new()
-	column.add_child(_guide)
+	_guide.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	add_child(_guide)
 	var footer := HFlowContainer.new()
 	footer.add_theme_constant_override("h_separation", 8)
 	footer.add_theme_constant_override("v_separation", 6)
@@ -87,9 +91,9 @@ func _ready() -> void:
 		_toolbar[id] = item
 		footer.add_child(item)
 	_save_button = UiHelpers.button("", func(): save_requested.emit())
-	_menu_button = UiHelpers.button("", func(): menu_requested.emit())
+	_pause_button = UiHelpers.button("", func(): pause_requested.emit())
 	footer.add_child(_save_button)
-	footer.add_child(_menu_button)
+	footer.add_child(_pause_button)
 	_final = FinalResultView.new()
 	add_child(_final)
 	_final.menu_requested.connect(func(): menu_requested.emit())
@@ -150,7 +154,16 @@ func _layout() -> void:
 	if _dock == null:
 		return
 	_dock.custom_minimum_size.x = clampf(size.x * 0.35, 360.0, 460.0)
+	_layout_guide()
 	call_deferred("_update_camera")
+
+func _layout_guide() -> void:
+	if not is_instance_valid(_guide) or size.x <= 0.0 or size.y <= 0.0:
+		return
+	var width := minf(size.x - 24.0, clampf(size.x * 0.62, 300.0, 860.0))
+	var height := minf(size.y - 24.0, maxf(170.0, width * 0.31))
+	_guide.size = Vector2(width, height)
+	_guide.position = (size - _guide.size) * 0.5
 
 func _update_camera() -> void:
 	if world != null and is_instance_valid(_map_space) and size.x > 0.0 and size.y > 0.0:
@@ -229,7 +242,8 @@ func _refresh_buttons(_code: StringName = &"") -> void:
 	if _save_button == null:
 		return
 	_save_button.text = UiHelpers.translated(&"ui.save_game")
-	_menu_button.text = UiHelpers.translated(&"ui.main_menu")
+	_pause_button.text = UiHelpers.translated(&"menu.pause_title")
+	_pause_button.tooltip_text = UiHelpers.translated(&"ui.pause_tip")
 	for id in _toolbar:
 		_toolbar[id].text = UiHelpers.translated(StringName("ui.toolbar.%s" % id))
 	_dock_title.text = UiHelpers.translated(StringName("ui.panel.%s" % _active_panel))

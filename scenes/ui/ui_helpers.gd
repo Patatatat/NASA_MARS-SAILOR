@@ -1,6 +1,138 @@
 class_name UiHelpers
 extends RefCounted
 
+const MENU_DESIGN_SIZE := Vector2(1920.0, 1080.0)
+const MENU_FONT: Font = preload("res://assets/fonts/Jura-Variable.ttf")
+const MENU_PLANET: Texture2D = preload("res://assets/ui/figma_menu/mars.png")
+const MENU_SLIDER_THUMB: Texture2D = preload("res://assets/ui/figma_menu/slider-thumb.svg")
+const MENU_RADIO_OUTER: Texture2D = preload("res://assets/ui/figma_menu/radio-outer.svg")
+const MENU_RADIO_OUTER_ALT: Texture2D = preload("res://assets/ui/figma_menu/radio-outer-alt.svg")
+const MENU_RADIO_INNER: Texture2D = preload("res://assets/ui/figma_menu/radio-inner.svg")
+
+static func create_menu_canvas(parent: Control) -> Control:
+	var canvas := Control.new()
+	canvas.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	canvas.size = MENU_DESIGN_SIZE
+	canvas.mouse_filter = Control.MOUSE_FILTER_PASS
+	parent.add_child(canvas)
+	parent.resized.connect(func(): fit_menu_canvas(parent, canvas))
+	fit_menu_canvas(parent, canvas)
+	return canvas
+
+static func fit_menu_canvas(parent: Control, canvas: Control) -> void:
+	var viewport_size := parent.get_viewport_rect().size
+	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		return
+	var scale_value := minf(viewport_size.x / MENU_DESIGN_SIZE.x, viewport_size.y / MENU_DESIGN_SIZE.y)
+	canvas.scale = Vector2.ONE * scale_value
+	canvas.position = (viewport_size - MENU_DESIGN_SIZE * scale_value) * 0.5
+
+static func add_menu_background(parent: Control, image_position: Vector2) -> TextureRect:
+	var black := ColorRect.new()
+	black.color = Color.BLACK
+	black.position = Vector2.ZERO
+	black.size = MENU_DESIGN_SIZE
+	black.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(black)
+
+	var planet := TextureRect.new()
+	planet.texture = MENU_PLANET
+	planet.position = image_position
+	planet.size = Vector2(2061.0, 921.0)
+	planet.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	planet.stretch_mode = TextureRect.STRETCH_SCALE
+	planet.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	planet.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(planet)
+
+	# Figma animates the image from 2111×943.344 px down to 2061×921 px,
+	# then holds for the remaining 1.5 seconds of its two-second loop.
+	var expanded_scale := Vector2(2111.0 / 2061.0, 943.344 / 921.0)
+	planet.scale = expanded_scale
+	var tween := planet.create_tween().set_loops()
+	tween.tween_property(planet, "scale", Vector2.ONE, 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tween.tween_interval(1.5)
+	tween.tween_property(planet, "scale", expanded_scale, 0.001)
+	return planet
+
+static func add_menu_label(parent: Control, value: String, position_value: Vector2, size_value: Vector2, font_size: int) -> Label:
+	var label := Label.new()
+	label.text = value
+	label.position = position_value
+	label.size = size_value
+	label.add_theme_font_override("font", MENU_FONT)
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", Color.WHITE)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(label)
+	return label
+
+static func make_menu_option(parent: Control, value: String, position_value: Vector2, size_value: Vector2,
+		font_size: int, text_offset: Vector2, action: Callable, header: bool = false) -> Dictionary:
+	var row := Control.new()
+	row.position = position_value
+	row.size = size_value
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(row)
+
+	var highlight := Panel.new()
+	highlight.position = Vector2.ZERO
+	highlight.size = size_value
+	highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var outline := StyleBoxFlat.new()
+	outline.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	outline.border_color = Color(1.0, 1.0, 1.0, 0.72)
+	outline.set_border_width_all(2)
+	outline.set_corner_radius_all(6)
+	outline.set_content_margin_all(0.0)
+	highlight.add_theme_stylebox_override("panel", outline)
+	highlight.modulate.a = 0.0
+	row.add_child(highlight)
+
+	var button := Button.new()
+	button.text = value
+	button.position = text_offset
+	button.size = Vector2(maxf(0.0, size_value.x - text_offset.x), size_value.y)
+	style_menu_button(button, font_size)
+	row.add_child(button)
+	button.pressed.connect(action)
+
+	return {"row": row, "highlight": highlight, "button": button,
+		"header": header, "tween": null, "selected": false}
+
+static func animate_menu_option(option: Dictionary, selected: bool, instant: bool = false) -> void:
+	option["selected"] = selected
+	var highlight: Panel = option["highlight"]
+	var previous: Variant = option.get("tween")
+	if previous is Tween and previous.is_running():
+		previous.kill()
+	if instant:
+		highlight.position.x = 0.0
+		highlight.modulate.a = 1.0 if selected else 0.0
+		return
+	var tween := highlight.create_tween().set_parallel(true)
+	option["tween"] = tween
+	if selected:
+		highlight.position.x = -8.0
+		highlight.modulate.a = 0.0
+		tween.tween_property(highlight, "position:x", 0.0, 0.18).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tween.tween_property(highlight, "modulate:a", 1.0, 0.18)
+	else:
+		tween.tween_property(highlight, "modulate:a", 0.0, 0.12)
+
+static func style_menu_button(button: Button, font_size: int) -> void:
+	button.flat = true
+	button.focus_mode = Control.FOCUS_ALL
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.add_theme_font_override("font", MENU_FONT)
+	button.add_theme_font_size_override("font_size", font_size)
+	button.add_theme_color_override("font_color", Color.WHITE)
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	button.add_theme_color_override("font_pressed_color", Color.WHITE)
+	button.add_theme_color_override("font_focus_color", Color.WHITE)
+	for state in ["normal", "hover", "pressed", "disabled", "focus", "hover_pressed"]:
+		button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+
 static func label(text_value: String, size: int = 18) -> Label:
 	var node := Label.new()
 	node.text = text_value
