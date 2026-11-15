@@ -1,6 +1,8 @@
 class_name GameSettingsService
 extends Node
 
+signal settings_changed()
+
 const USER_SETTINGS_PATH := "user://settings.cfg"
 const RESOLUTIONS := ["1280x720", "1600x900", "1920x1080"]
 const DEFAULTS := {"language": "es", "master_volume": 0.8, "sfx_volume": 0.8,
@@ -14,6 +16,7 @@ func _ready() -> void:
 	_load_user_settings()
 	get_tree().root.get_node("LocalizationDB").set_language(StringName(_current.get("language", "es")))
 	_apply_display_settings()
+	settings_changed.emit()
 	get_window().content_scale_factor = float(_current.get("ui_scale", 1.0))
 
 func rebuild_from_state() -> void:
@@ -30,21 +33,11 @@ func get_settings() -> Dictionary:
 	return result
 
 func apply_settings(values: Dictionary) -> GameContracts.ValidationResult:
-	for key in values:
-		if not DEFAULTS.has(key):
-			return GameContracts.failure(&"invalid_setting", {"key": key})
-		if key == "language" and not LocalizationDatabase.LANGUAGES.has(StringName(values[key])):
-			return GameContracts.failure(&"invalid_language")
-		if key.ends_with("volume") and (not (values[key] is float or values[key] is int) or float(values[key]) < 0.0 or float(values[key]) > 1.0):
-			return GameContracts.failure(&"invalid_volume")
-		if key == "show_tutorial" and not values[key] is bool:
-			return GameContracts.failure(&"invalid_setting")
-		if key == "ui_scale" and (not (values[key] is int or values[key] is float) or not float(values[key]) in [1.0, 1.15, 1.25]):
-			return GameContracts.failure(&"invalid_setting")
-		if key == "fullscreen" and not values[key] is bool:
-			return GameContracts.failure(&"invalid_setting")
-		if key == "resolution" and not RESOLUTIONS.has(String(values[key])):
-			return GameContracts.failure(&"invalid_setting")
+	var validation := _validate_settings(values)
+	if not validation.ok:
+		return validation
+	if Engine.is_embedded_in_editor() and (values.has("fullscreen") or values.has("resolution")):
+		return GameContracts.failure(&"display_embedded")
 	_current.merge(values.duplicate(true), true)
 	if not GameState.data.is_empty():
 		GameState.data.get_or_add("settings", {}).merge(values.duplicate(true), true)
@@ -55,6 +48,25 @@ func apply_settings(values: Dictionary) -> GameContracts.ValidationResult:
 		get_window().content_scale_factor = float(values["ui_scale"])
 	if values.has("fullscreen") or values.has("resolution"):
 		_apply_display_settings()
+	settings_changed.emit()
+	return GameContracts.success()
+
+func _validate_settings(values: Dictionary) -> GameContracts.ValidationResult:
+	for key in values:
+		if not DEFAULTS.has(key):
+			return GameContracts.failure(&"invalid_setting", {"key": key})
+		if key == "language" and (not values[key] is String or not LocalizationDatabase.LANGUAGES.has(StringName(values[key]))):
+			return GameContracts.failure(&"invalid_language")
+		if key.ends_with("volume") and (not (values[key] is float or values[key] is int) or not is_finite(float(values[key])) or float(values[key]) < 0.0 or float(values[key]) > 1.0):
+			return GameContracts.failure(&"invalid_volume")
+		if key == "show_tutorial" and not values[key] is bool:
+			return GameContracts.failure(&"invalid_setting")
+		if key == "ui_scale" and (not (values[key] is int or values[key] is float) or not float(values[key]) in [1.0, 1.15, 1.25]):
+			return GameContracts.failure(&"invalid_setting")
+		if key == "fullscreen" and not values[key] is bool:
+			return GameContracts.failure(&"invalid_setting")
+		if key == "resolution" and (not values[key] is String or not RESOLUTIONS.has(values[key])):
+			return GameContracts.failure(&"invalid_setting")
 	return GameContracts.success()
 
 func _load_user_settings() -> void:
@@ -65,7 +77,7 @@ func _load_user_settings() -> void:
 	if not saved is Dictionary:
 		return
 	for key in saved:
-		if DEFAULTS.has(key):
+		if _validate_settings({key: saved[key]}).ok:
 			_current[key] = saved[key]
 
 func _persist_user_settings() -> void:
@@ -74,17 +86,16 @@ func _persist_user_settings() -> void:
 	config.save(USER_SETTINGS_PATH)
 
 func _apply_display_settings() -> void:
+	if Engine.is_embedded_in_editor():
+		return
 	var resolution_parts := String(_current.get("resolution", "1600x900")).split("x")
 	if resolution_parts.size() != 2:
 		return
 	var target_size := Vector2i(int(resolution_parts[0]), int(resolution_parts[1]))
 	var window := get_window()
-	# Keep the selected render resolution active in fullscreen too. Godot sizes a
-	# fullscreen window to the monitor, so content_scale_size controls the game's
-	# virtual render size while window.size controls windowed mode.
-	window.content_scale_size = target_size
+	# Resolution changes the native window, not the logical HUD/menu coordinate system.
 	if bool(_current.get("fullscreen", false)):
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		window.mode = Window.MODE_FULLSCREEN
 	else:
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		window.mode = Window.MODE_WINDOWED
 		window.size = target_size

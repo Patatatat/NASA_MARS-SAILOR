@@ -2,22 +2,23 @@ class_name MartianWorld
 extends Node3D
 
 const BUILDING_MODELS := {
-	"base": preload("res://assets/3D assests/3D_assets/MainBase.glb"),
-	"isru": preload("res://assets/3D assests/3D_assets/ISRU.glb"),
-	"greenhouse": preload("res://assets/3D assests/3D_assets/GreenHouse.glb"),
-	"solar_panel": preload("res://assets/3D assests/3D_assets/SolarPanel.glb"),
-	"battery": preload("res://assets/3D assests/3D_assets/Battery.glb"),
-	"laboratory": preload("res://assets/3D assests/3D_assets/Laboratory.glb"),
-	"mine": preload("res://assets/3D assests/3D_assets/Mine.glb"),
-	"refinery": preload("res://assets/3D assests/3D_assets/Refinery.glb"),
-	"printer_3d": preload("res://assets/3D assests/3D_assets/3DPrinter.glb"),
-	"reactor": preload("res://assets/3D assests/3D_assets/NuclearReactor.glb"),
-	"landing_pad": preload("res://assets/3D assests/3D_assets/LandingPad.glb")
+	"base": preload("res://assets/3D assests/nuevosmodelos3d/MainBase.glb"),
+	"isru": preload("res://assets/3D assests/nuevosmodelos3d/ISRU.glb"),
+	"greenhouse": preload("res://assets/3D assests/nuevosmodelos3d/GreenHouse.glb"),
+	"solar_panel": preload("res://assets/3D assests/nuevosmodelos3d/SolarPanel.glb"),
+	"battery": preload("res://assets/3D assests/nuevosmodelos3d/Battery.glb"),
+	"laboratory": preload("res://assets/3D assests/nuevosmodelos3d/Laboratory.glb"),
+	"mine": preload("res://assets/3D assests/nuevosmodelos3d/Mine.glb"),
+	"refinery": preload("res://assets/3D assests/nuevosmodelos3d/Refinery.glb"),
+	"printer_3d": preload("res://assets/3D assests/nuevosmodelos3d/3DPrinter.glb"),
+	"reactor": preload("res://assets/3D assests/nuevosmodelos3d/NuclearReactor.glb"),
+	"landing_pad": preload("res://assets/3D assests/nuevosmodelos3d/LandingPad.glb")
 }
-const TUNNEL_STRAIGHT: PackedScene = preload("res://assets/3D assests/3D_assets/TunnelStraight.glb")
-const TUNNEL_CORNER: PackedScene = preload("res://assets/3D assests/3D_assets/TunnelIntersectionCorner.glb")
-const TUNNEL_T: PackedScene = preload("res://assets/3D assests/3D_assets/TunnelIntersectionT.glb")
-const TUNNEL_CROSS: PackedScene = preload("res://assets/3D assests/3D_assets/TunnelIntersection.glb")
+const TUNNEL_STRAIGHT: PackedScene = preload("res://assets/3D assests/nuevosmodelos3d/TunnelStraight.glb")
+const TUNNEL_CORNER: PackedScene = preload("res://assets/3D assests/nuevosmodelos3d/TunnelCorner.glb")
+const TUNNEL_T: PackedScene = preload("res://assets/3D assests/nuevosmodelos3d/TunnelIntersectionT.glb")
+const TUNNEL_CROSS: PackedScene = preload("res://assets/3D assests/nuevosmodelos3d/TunnelIntersection.glb")
+const WEATHER_EFFECTS := preload("res://scenes/world/weather_effects.gd")
 
 signal target_selected(target_id: StringName)
 signal placement_requested(request: GameContracts.PlacementRequest)
@@ -33,8 +34,20 @@ var placement_type: StringName = &""
 var _last_visual_signature := ""
 var _crew_visuals: Dictionary = {}
 var _rocket_visuals: Dictionary = {}
+var weather: WEATHER_EFFECTS
 
 func _ready() -> void:
+	# Each world owns its environment; temporary weather cannot leak to another instance.
+	$WorldEnvironment.environment = $WorldEnvironment.environment.duplicate()
+	var weather_layer := CanvasLayer.new()
+	weather_layer.name = "WeatherLayer"
+	weather_layer.layer = 0
+	add_child(weather_layer)
+	weather = WEATHER_EFFECTS.new()
+	weather.name = "WeatherEffects"
+	weather_layer.add_child(weather)
+	visibility_changed.connect(_sync_weather)
+	SignalBus.event_changed.connect(func(_id, _phase): _sync_weather())
 	SignalBus.state_restored.connect(rebuild_from_state)
 	SignalBus.building_changed.connect(_on_building_changed)
 	SignalBus.energy_changed.connect(_on_energy_changed)
@@ -46,7 +59,16 @@ func _ready() -> void:
 	_sync_daylight()
 
 func _process(_delta: float) -> void:
+	_sync_weather()
 	_sync_daylight()
+
+func _sync_weather() -> void:
+	if weather == null or camera_rig == null:
+		return
+	var viewport_size := get_viewport().get_visible_rect().size
+	var region := camera_rig.map_view
+	weather.sync_from_events(GameState.data.get("events", {}),
+		Rect2(region.position * viewport_size, region.size * viewport_size), is_visible_in_tree())
 
 func _sync_daylight() -> void:
 	if not is_node_ready():
@@ -64,6 +86,18 @@ func _sync_daylight() -> void:
 	# Keep the colony readable at night, especially on dim displays; the blue
 	# ambient fill is a gameplay aid, while the direct sun and shadows fade.
 	environment.ambient_light_energy = lerpf(0.75, 0.6, sunlight)
+	var dust := weather != null and weather.dust_active
+	var flare := weather != null and weather.flare_active
+	environment.fog_enabled = dust
+	if dust:
+		environment.fog_density = 0.012
+		environment.fog_light_color = Color("796452").lerp(Color("b0804c"), sunlight)
+		environment.fog_light_energy = lerpf(0.25, 0.65, sunlight)
+		sun.light_energy *= 0.55
+		environment.background_color = environment.background_color.lerp(Color("745037"), 0.5)
+	if flare:
+		sun.light_color = sun.light_color.lerp(Color("ffb579"), 0.55)
+		environment.ambient_light_color = environment.ambient_light_color.lerp(Color("e8ac91"), 0.22)
 
 func configure(buildings: BuildingService, grid: GridService) -> void:
 	building_service = buildings
@@ -71,6 +105,7 @@ func configure(buildings: BuildingService, grid: GridService) -> void:
 	rebuild_from_state()
 
 func rebuild_from_state() -> void:
+	_sync_weather()
 	if terrain_root == null or buildings_root == null:
 		return
 	_clear(terrain_root)
@@ -231,8 +266,9 @@ func _add_building_visual(id: StringName) -> void:
 	var building_type := String(item["type"])
 	var packed_scene: PackedScene = BUILDING_MODELS.get(building_type)
 	var rotation_y := 0.0
+	var tunnel_model: Dictionary = {}
 	if building_type == "tunnel":
-		var tunnel_model := _tunnel_model(Vector2i(int(origin[0]), int(origin[1])))
+		tunnel_model = _tunnel_model(Vector2i(int(origin[0]), int(origin[1])))
 		packed_scene = tunnel_model["scene"] as PackedScene
 		rotation_y = float(tunnel_model["rotation"])
 	if packed_scene != null:
@@ -241,16 +277,24 @@ func _add_building_visual(id: StringName) -> void:
 			model.name = String(id)
 			model.rotation.y = rotation_y
 			buildings_root.add_child(model)
-			if _fit_model_to_footprint(model, origin, size):
+			if _fit_model_to_footprint(model, origin, size, building_type == "tunnel"):
+				if building_type == "tunnel":
+					_add_tunnel_caps(model, tunnel_model, item)
 				_apply_model_status(model, status, item)
 				return
 			model.queue_free()
 	_add_fallback_building_visual(id, item, status, origin, size)
 
-func _fit_model_to_footprint(model: Node3D, origin: Array, size: Array) -> bool:
+func _fit_model_to_footprint(model: Node3D, origin: Array, size: Array, tunnel: bool = false) -> bool:
 	var bounds := _model_bounds(model)
 	if bounds.size.x <= 0.001 or bounds.size.z <= 0.001:
 		return false
+	if tunnel:
+		# All replacement tunnel assets use a junction at (0,0), with ports at ±1.
+		# Preserve this common frame: AABB-centering a corner or T moves its junction.
+		model.scale = Vector3.ONE * 0.5
+		model.position = Vector3(float(origin[0]) + 0.5, 0.025 - bounds.position.y * 0.5, float(origin[1]) + 0.5)
+		return true
 	var target_width := maxf(0.5, float(size[0]) * 0.9)
 	var target_depth := maxf(0.5, float(size[1]) * 0.9)
 	var scale_factor := minf(target_width / bounds.size.x, target_depth / bounds.size.z)
@@ -261,9 +305,19 @@ func _fit_model_to_footprint(model: Node3D, origin: Array, size: Array) -> bool:
 		bounds.position.z + bounds.size.z * 0.5)
 	var center_offset := model.transform.basis * local_center
 	model.position = Vector3(float(origin[0]) + float(size[0]) * 0.5 - center_offset.x,
-		0.025 - bounds.position.y * scale_factor,
+		0.025 - _model_ground_y(model, bounds) * scale_factor,
 		float(origin[1]) + float(size[1]) * 0.5 - center_offset.z)
 	return true
+
+func _model_ground_y(model: Node3D, bounds: AABB) -> float:
+	if model.scene_file_path.ends_with("/LandingPad.glb"):
+		# Its decorative rock extends below the platform. Anchor the platform itself,
+		# rather than lifting the entire pad to place the bottom of that rock at ground.
+		for mesh: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+			if String(mesh.name).replace(".", "").replace("_", "") == "Cylinder009":
+				var local: AABB = (model.global_transform.affine_inverse() * mesh.global_transform) * mesh.get_aabb()
+				return local.position.y
+	return bounds.position.y
 
 func _model_bounds(model: Node3D) -> AABB:
 	var combined := AABB()
@@ -310,7 +364,7 @@ func _apply_model_status(model: Node3D, status: BuildingStatus, item: Dictionary
 func _tunnel_model(origin: Vector2i) -> Dictionary:
 	var connections := _tunnel_connections(origin)
 	var scene: PackedScene = TUNNEL_STRAIGHT
-	var base_directions: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0)]
+	var base_directions: Array[Vector2i] = [Vector2i(0, -1), Vector2i(0, 1)]
 	if connections.size() >= 4:
 		scene = TUNNEL_CROSS
 		base_directions = [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
@@ -320,12 +374,32 @@ func _tunnel_model(origin: Vector2i) -> Dictionary:
 	elif connections.size() == 2:
 		if connections[0] + connections[1] == Vector2i.ZERO:
 			scene = TUNNEL_STRAIGHT
-			base_directions = [Vector2i(1, 0), Vector2i(-1, 0)]
+			base_directions = [Vector2i(0, -1), Vector2i(0, 1)]
 		else:
 			scene = TUNNEL_CORNER
-			base_directions = [Vector2i(0, -1), Vector2i(1, 0)]
+			base_directions = [Vector2i(0, -1), Vector2i(-1, 0)]
 	var turns := _tunnel_rotation_to_match(base_directions, connections)
-	return {"scene": scene, "rotation": float(turns) * PI * 0.5}
+	return {"scene": scene, "rotation": float(turns) * PI * 0.5, "ports": base_directions, "connections": connections}
+
+func _add_tunnel_caps(model: Node3D, description: Dictionary, item: Dictionary) -> void:
+	for port: Vector2i in description["ports"]:
+		var rotated := model.basis * Vector3(port.x, 0.0, port.y)
+		var direction := Vector2i(roundi(rotated.x * 2.0), roundi(rotated.z * 2.0))
+		if description["connections"].has(direction) and not bool(item.get("isolated", false)):
+			continue
+		var cap := MeshInstance3D.new()
+		cap.name = "SealedPort_%d_%d" % [port.x, port.y]
+		var disk := CylinderMesh.new()
+		disk.top_radius = 0.34
+		disk.bottom_radius = 0.34
+		disk.height = 0.025
+		cap.mesh = disk
+		cap.position = Vector3(port.x, 0.30, port.y)
+		cap.rotation_degrees = Vector3(90.0, 0.0, 0.0) if port.x == 0 else Vector3(0.0, 0.0, 90.0)
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color("cf8f42") if bool(item.get("isolated", false)) else Color("708594")
+		cap.material_override = material
+		model.add_child(cap)
 
 func _tunnel_connections(origin: Vector2i) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
@@ -335,7 +409,7 @@ func _tunnel_connections(origin: Vector2i) -> Array[Vector2i]:
 		var neighbor := origin + direction
 		for id in instances:
 			var item: Dictionary = instances[id]
-			if item.get("type", "") not in ["tunnel", "base"]:
+			if not TunnelNetwork.has_tunnel_port(item):
 				continue
 			if grid_service._rect(item).has_point(neighbor):
 				result.append(direction)
@@ -357,7 +431,7 @@ func _tunnel_rotation_to_match(base: Array[Vector2i], desired: Array[Vector2i]) 
 			if not rotated.has(wanted):
 				matches_all = false
 				break
-		if matches_all and rotated.size() == desired.size():
+		if matches_all and rotated.size() >= desired.size():
 			return turns
 	return 0
 

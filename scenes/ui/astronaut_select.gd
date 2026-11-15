@@ -30,10 +30,17 @@ func _ready() -> void:
 func refresh(_language: StringName = &"") -> void:
 	if not is_instance_valid(_content):
 		return
+	var focus := get_viewport().gui_get_focus_owner()
+	var focus_name := String(focus.name) if focus != null and is_ancestor_of(focus) else ""
 	UiHelpers.clear(_content)
 	_draw_background_and_title()
 	_draw_cards()
 	_draw_footer()
+	if not focus_name.is_empty():
+		var replacement := _content.get_node_or_null(NodePath(focus_name)) as Control
+		if replacement == null:
+			replacement = _content.get_node("PageButton")
+		replacement.grab_focus()
 
 func add_profile(id: StringName) -> void:
 	if selected.size() < 4 and _is_selectable(id) and not selected.has(id):
@@ -69,6 +76,10 @@ func _draw_background_and_title() -> void:
 	title.size = Vector2(820.0, 90.0)
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	title_strip.add_child(title)
+	var disclosure := _label(_tr(&"ui.si_disclosure"), 24)
+	disclosure.position = Vector2(96, 172)
+	disclosure.size = Vector2(1716, 38)
+	_content.add_child(disclosure)
 
 func _draw_cards() -> void:
 	var profiles := _page_profiles()
@@ -92,6 +103,7 @@ func _create_card(profile: Dictionary, position_value: Vector2) -> void:
 	var id: StringName = profile["id"]
 	var is_selected := selected.has(id)
 	var card := Button.new()
+	card.name = "Card_" + String(id)
 	card.position = position_value
 	card.size = CARD_SIZE
 	card.text = ""
@@ -114,6 +126,7 @@ func _create_card(profile: Dictionary, position_value: Vector2) -> void:
 	portrait.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(portrait)
+	UiHelpers.add_si_mark(portrait, 28)
 
 	var role_text := _tr(StringName(profile["role"]))
 	var role_width := 220.0 if role_text.length() < 16 else 330.0
@@ -182,8 +195,8 @@ func _draw_footer() -> void:
 
 	_start_button = Button.new()
 	_start_button.text = _tr(&"setup.select_crew.start")
-	_start_button.position = Vector2(710.0, 992.0)
-	_start_button.size = Vector2(500.0, 66.0)
+	_start_button.position = Vector2(710.0, 990.0)
+	_start_button.size = Vector2(500.0, 88.0)
 	_start_button.disabled = selected.size() != 4
 	_start_button.tooltip_text = _tr(&"setup.select_crew.required") if _start_button.disabled else _tr(&"ui.start_ready")
 	_start_button.add_theme_font_override("font", UiHelpers.MENU_FONT)
@@ -196,9 +209,10 @@ func _draw_footer() -> void:
 	_content.add_child(_start_button)
 
 	var page_button := Button.new()
+	page_button.name = "PageButton"
 	page_button.text = "→" if _page == 0 else "←"
 	page_button.position = Vector2(1770.0, 934.0)
-	page_button.size = Vector2(76.0, 76.0)
+	page_button.size = Vector2(88.0, 88.0)
 	page_button.add_theme_font_override("font", UiHelpers.MENU_FONT)
 	page_button.add_theme_font_size_override("font_size", 54)
 	page_button.add_theme_stylebox_override("normal", _circle_style(false))
@@ -207,7 +221,7 @@ func _draw_footer() -> void:
 	page_button.pressed.connect(_change_page)
 	_content.add_child(page_button)
 	var page_caption := _label(_tr(&"ui.crew_see_more") if _page == 0 else _tr(&"ui.crew_see_previous"), 21)
-	page_caption.position = Vector2(1660.0, 1006.0)
+	page_caption.position = Vector2(1660.0, 1030.0)
 	page_caption.size = Vector2(260.0, 30.0)
 	page_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_content.add_child(page_caption)

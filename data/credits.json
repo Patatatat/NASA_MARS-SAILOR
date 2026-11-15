@@ -1,0 +1,228 @@
+{
+  "meta": {
+    "schema_version": 1,
+    "verified_on": "2026-11-15",
+    "provider": "NASA",
+    "inspiration_document": "docs/credits-review/tarjetas_colonia_marciana_nasa.md"
+  },
+  "team": [
+    {
+      "name": "Emiliano Rafael Mendoza Nava",
+      "role_key": "credits.role.lead"
+    },
+    {
+      "name": "Alejandro Maximiliano Luque Varela",
+      "role_key": "credits.role.audio"
+    },
+    {
+      "name": "Guillermo Alonso Servin Valenzuela",
+      "role_key": "credits.role.3d"
+    },
+    {
+      "name": "Iris Anai Chavez Lucero",
+      "role_key": "credits.role.ui"
+    },
+    {
+      "name": "Andrés Guluarte Quintero",
+      "role_key": "credits.role.programmer"
+    }
+  ],
+  "references": [
+    {
+      "id": "habitat",
+      "buildings": [
+        "base"
+      ],
+      "title_key": "credits.habitat.title",
+      "fact_key": "credits.habitat.fact",
+      "limit_key": "credits.habitat.limit",
+      "sources": [
+        {
+          "title": "Design and development of the second generation Mars Habitat",
+          "url": "https://ntrs.nasa.gov/citations/19940021200",
+          "provider": "Estudio universitario / University study · NASA NTRS"
+        }
+      ]
+    },
+    {
+      "id": "laboratory",
+      "buildings": [
+        "laboratory"
+      ],
+      "title_key": "credits.laboratory.title",
+      "fact_key": "credits.laboratory.fact",
+      "limit_key": "credits.laboratory.limit",
+      "sources": [
+        {
+          "title": "Inflatable Habitat Structure",
+          "url": "https://ntrs.nasa.gov/citations/19930000364",
+          "provider": "NASA NTRS"
+        }
+      ]
+    },
+    {
+      "id": "solar_model",
+      "buildings": [
+        "solar_panel"
+      ],
+      "title_key": "credits.solar_model.title",
+      "fact_key": "credits.solar_model.fact",
+      "limit_key": "credits.solar_model.limit",
+      "sources": [
+        {
+          "title": "Compact Telescoping Surface Array for Mars Solar Power",
+          "url": "https://ntrs.nasa.gov/citations/20190000437",
+          "provider": "NASA NTRS"
+        }
+      ]
+    },
+    {
+      "id": "reactor_model",
+      "buildings": [
+        "reactor"
+      ],
+      "title_key": "credits.reactor_model.title",
+      "fact_key": "credits.reactor_model.fact",
+      "limit_key": "credits.reactor_model.limit",
+      "sources": [
+        {
+          "title": "Fission Surface Power",
+          "url": "https://www.nasa.gov/exploration-systems-development-mission-directorate/fission-surface-power/",
+          "provider": "NASA"
+        },
+        {
+          "title": "Fission Surface Power Technology Demonstration Unit Test Results",
+          "url": "https://ntrs.nasa.gov/citations/20170000949",
+          "provider": "NASA NTRS"
+        }
+      ]
+    },
+    {
+      "id": "isru_model",
+      "buildings": [
+        "isru"
+      ],
+      "title_key": "credits.isru_model.title",
+      "fact_key": "credits.isru_model.fact",
+      "limit_key": "credits.isru_model.limit",
+      "sources": [
+        {
+          "title": "Assessing the Feasibility of a Martian ISRU Propellant Plant",
+          "url": "https://ntrs.nasa.gov/citations/20240014064",
+          "provider": "NASA NTRS"
+        },
+        {
+          "title": "Overview: In-Situ Resource Utilization",
+          "url": "https://www.nasa.gov/overview-in-situ-resource-utilization/",
+          "provider": "NASA"
+        }
+      ]
+    },
+    {
+      "id": "refinery_model",
+      "buildings": [
+        "refinery"
+      ],
+      "title_key": "credits.refinery_model.title",
+      "fact_key": "credits.refinery_model.fact",
+      "limit_key": "credits.refinery_model.limit",
+      "sources": [
+        {
+          "title": "In Situ Resource Utilization (ISRU) Experiments for Mars Exploration",
+          "url": "https://ntrs.nasa.gov/citations/20050215331",
+          "provider": "NASA Faculty Fellowship · NTRS"
+        }
+      ]
+    },
+    {
+      "id": "mine_model",
+      "buildings": [
+        "mine"
+      ],
+      "title_key": "credits.mine_model.title",
+      "fact_key": "credits.mine_model.fact",
+      "limit_key": "credits.mine_model.limit",
+      "sources": [
+        {
+          "title": "Regolith Advanced Surface Systems Operations Robot (RASSOR) Excavator",
+          "url": "https://technology.nasa.gov/patent/KSC-TOPS-7",
+          "provider": "NASA Technology Transfer"
+        },
+        {
+          "title": "Regolith Advanced Surface Systems Operations Robot (RASSOR)",
+          "url": "https://science.nasa.gov/3d-resources/regolith-advanced-surface-systems-operations-robot-rassor/",
+          "provider": "NASA Science · 3D Resources"
+        }
+      ]
+    },
+    {
+      "id": "greenhouse_model",
+      "buildings": [
+        "greenhouse"
+      ],
+      "title_key": "credits.greenhouse_model.title",
+      "fact_key": "credits.greenhouse_model.fact",
+      "limit_key": "credits.greenhouse_model.limit",
+      "sources": [
+        {
+          "title": "Preliminary greenhouse design for a Martian colony: Structural, solar collection, and light distribution systems",
+          "url": "https://ntrs.nasa.gov/citations/19910008822",
+          "provider": "NASA NTRS"
+        },
+        {
+          "title": "Lunar, Martian Greenhouses Designed to Mimic Those on Earth",
+          "url": "https://www.nasa.gov/science-research/lunar-martian-greenhouses-designed-to-mimic-those-on-earth/",
+          "provider": "NASA"
+        }
+      ]
+    },
+    {
+      "id": "battery_model",
+      "buildings": [
+        "battery"
+      ],
+      "title_key": "credits.battery_model.title",
+      "fact_key": "credits.battery_model.fact",
+      "limit_key": "credits.battery_model.limit",
+      "sources": [
+        {
+          "title": "Parametric-Based Heat Rejection Trade Study for Lunar and Martian Surface Operations",
+          "url": "https://ntrs.nasa.gov/citations/20260006829",
+          "provider": "NASA NTRS"
+        }
+      ]
+    },
+    {
+      "id": "landing_model",
+      "buildings": [
+        "landing_pad"
+      ],
+      "title_key": "credits.landing_model.title",
+      "fact_key": "credits.landing_model.fact",
+      "limit_key": "credits.landing_model.limit",
+      "sources": [
+        {
+          "title": "Landing Pads Being Designed for Extraterrestrial Missions",
+          "url": "https://www.nasa.gov/centers-and-facilities/kennedy/landing-pads-being-designed-for-extraterrestrial-missions/",
+          "provider": "NASA"
+        }
+      ]
+    },
+    {
+      "id": "tunnel_model",
+      "buildings": [
+        "tunnel"
+      ],
+      "title_key": "credits.tunnel_model.title",
+      "fact_key": "credits.tunnel_model.fact",
+      "limit_key": "credits.tunnel_model.limit",
+      "sources": [
+        {
+          "title": "University of Michigan Moon to Mars eXploration Systems and Habitation (M2M X-Hab) 2026 Academic Innovation Challenge: Lightweight Actuated Tunnels for Crewed Habitation, Recommendations for an Active Pressurized Tunnel System for Functionality on the Martian Surface",
+          "url": "https://ntrs.nasa.gov/citations/20260004995",
+          "provider": "University of Michigan · NASA NTRS"
+        }
+      ]
+    }
+  ]
+}

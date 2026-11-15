@@ -345,6 +345,8 @@ func _touches_tunnel(rect: Rect2i, allow_base: bool = false) -> bool:
 	for item in GameState.data["buildings"]["instances"].values():
 		if item.get("type") != "tunnel" and not (allow_base and item.get("type") == "base"):
 			continue
+		if not TunnelNetwork.is_open(item):
+			continue
 		if grid._edge_distance(rect, grid._rect(item)) <= 1.0:
 			return true
 	return false

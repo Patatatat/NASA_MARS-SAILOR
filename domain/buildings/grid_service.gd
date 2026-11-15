@@ -102,7 +102,7 @@ func get_energy_links() -> Array[Dictionary]:
 	return result
 
 func _can_link(a: Dictionary, b: Dictionary) -> bool:
-	if (a.get("type") == "tunnel" and (a.get("condition") == "breached" or bool(a.get("isolated", false)))) or (b.get("type") == "tunnel" and (b.get("condition") == "breached" or bool(b.get("isolated", false)))):
+	if (a.get("type") == "tunnel" and not TunnelNetwork.is_open(a)) or (b.get("type") == "tunnel" and not TunnelNetwork.is_open(b)):
 		return false
 	var a_rect := _rect(a)
 	var b_rect := _rect(b)

@@ -465,6 +465,11 @@ func _show_resources() -> void:
 		_body.add_child(UiHelpers.label("%s: %.1f" % [_tr(StringName("resource.%s" % id)), services["ledger"].get_amount(StringName(id))]))
 
 func _show_codex() -> void:
+	if services.has("dialogue"):
+		_body.add_child(UiHelpers.label(_tr(&"onboarding.help")))
+		_body.add_child(UiHelpers.button(_tr(&"onboarding.recall"), services["dialogue"].recall_tutorial, true))
+		_body.add_child(UiHelpers.button(_tr(&"onboarding.reactivate"), services["dialogue"].reactivate_tutorial))
+		_body.add_child(UiHelpers.button(_tr(&"onboarding.restart"), services["dialogue"].restart_tutorial))
 	for source in get_tree().root.get_node("NasaDataCatalog").get_sources():
 		_body.add_child(UiHelpers.label(source["title"], 19))
 		_body.add_child(UiHelpers.label(_tr(StringName(source["explanation_key"]))))
@@ -482,6 +487,12 @@ func _quote(result: GameContracts.ValidationResult) -> String:
 
 func _act(result: GameContracts.ValidationResult) -> void:
 	_feedback.text = _quote(result)
+	if result.ok and result.params.has("building_id") and GameState.data.get("tutorial", {}).get("guided", false):
+		# A guided build is one deliberate placement, with an explicit success state.
+		_coordinates_open = false
+		if world != null:
+			world.cancel_placement()
+		_feedback.text = _tr(&"onboarding.built")
 	_feedback.show()
 	refresh()
 

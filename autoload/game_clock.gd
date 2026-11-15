@@ -9,8 +9,9 @@ func set_speed(multiplier: float) -> GameContracts.ValidationResult:
 	return GameContracts.success()
 
 func set_paused(paused: bool) -> void:
-	if GameState.is_running():
+	if GameState.is_running() and bool(GameState.data["clock"].get("paused", false)) != paused:
 		GameState.data["clock"]["paused"] = paused
+		SignalBus.pause_changed.emit(paused)
 
 func advance_to_sol(sol: int) -> GameContracts.ValidationResult:
 	if runner == null or not GameState.is_running():

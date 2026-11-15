@@ -5,7 +5,7 @@ signal back_requested()
 signal main_menu_requested()
 signal save_requested()
 
-const RESOLUTIONS := ["1280x720", "1600x900", "1920x1080"]
+const RESOLUTIONS := GameSettingsService.RESOLUTIONS
 
 var _canvas: Control
 var _page: StringName = &"settings"
@@ -193,16 +193,8 @@ func _render_compact_sound() -> void:
 	for control in controls:
 		UiHelpers.add_menu_label(_canvas, _tr(control["label"]),
 			Vector2(625.0, control["y"]), Vector2(670.0, 50.0), 34)
-		var slider := HSlider.new()
-		slider.position = Vector2(625.0, control["y"] + 57.0)
-		slider.size = Vector2(670.0, 48.0)
-		slider.min_value = 0.0
-		slider.max_value = 1.0
-		slider.step = 0.01
-		slider.value = float(settings.get(control["key"], 0.8))
-		_style_slider(slider)
-		slider.value_changed.connect(_on_volume_changed.bind(String(control["key"])))
-		_canvas.add_child(slider)
+		_add_volume_slider(String(control["key"]), Vector2(625.0, control["y"] + 57.0),
+			670.0, float(settings.get(control["key"], 0.8)))
 
 func _render_compact_language() -> void:
 	_add_compact_panel(Vector2(610.0, 140.0), Vector2(700.0, 800.0))
@@ -225,7 +217,7 @@ func _render_compact_screen() -> void:
 		Vector2(625.0, 438.0), Vector2(670.0, 54.0), 34)
 	var resolution := OptionButton.new()
 	resolution.position = Vector2(625.0, 500.0)
-	resolution.size = Vector2(670.0, 76.0)
+	resolution.size = Vector2(670.0, 88.0)
 	resolution.add_theme_font_override("font", UiHelpers.MENU_FONT)
 	resolution.add_theme_font_size_override("font_size", 34)
 	resolution.add_theme_color_override("font_color", Color.WHITE)
@@ -240,6 +232,7 @@ func _render_compact_screen() -> void:
 	resolution.select(maxi(0, current_index))
 	resolution.item_selected.connect(_on_resolution_selected)
 	_canvas.add_child(resolution)
+	_add_display_hint(Vector2(625.0, 600.0), Vector2(670.0, 120.0), 26)
 
 func _add_compact_back_button() -> void:
 	var y_position := 715.0
@@ -288,26 +281,46 @@ func _render_sound() -> void:
 		{"label": &"settings.music", "key": "ambient_volume", "label_pos": Vector2(137.0, 552.0), "slider_pos": Vector2(376.0, 575.0)}
 	]
 	for control in controls:
-		UiHelpers.add_menu_label(_canvas, _tr(control["label"]), control["label_pos"], Vector2(300.0, 90.0), 64)
-		var slider := HSlider.new()
-		slider.position = control["slider_pos"]
-		slider.size = Vector2(664.0, 60.0)
-		slider.min_value = 0.0
-		slider.max_value = 1.0
-		slider.step = 0.01
-		slider.value = float(settings.get(control["key"], 0.8))
-		_style_slider(slider)
-		slider.value_changed.connect(_on_volume_changed.bind(String(control["key"])))
-		_canvas.add_child(slider)
+		UiHelpers.add_menu_label(_canvas, _tr(control["label"]), control["label_pos"], Vector2(370.0, 90.0), 50)
+		_add_volume_slider(String(control["key"]), Vector2(530.0, control["label_pos"].y + 18.0),
+			670.0, float(settings.get(control["key"], 0.8)), false)
+
+func _add_volume_slider(key: String, at: Vector2, width: float, value: float, compact: bool = true) -> void:
+	var slider := HSlider.new()
+	slider.name = key
+	slider.position = at
+	slider.size = Vector2(width, 88.0)
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.01
+	slider.value = value
+	slider.focus_mode = Control.FOCUS_ALL
+	_style_slider(slider)
+	_canvas.add_child(slider)
+	var value_position := at + (Vector2(width - 140.0, -57.0) if compact else Vector2(width + 24.0, 0.0))
+	var measurement := UiHelpers.add_menu_label(_canvas, "%d%%" % roundi(value * 100.0),
+		value_position, Vector2(140.0, 88.0), 34)
+	measurement.name = key + "_percent"
+	measurement.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	measurement.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	slider.value_changed.connect(func(next: float):
+		measurement.text = "%d%%" % roundi(next * 100.0)
+		_on_volume_changed(next, key))
 
 func _style_slider(slider: HSlider) -> void:
 	var track := StyleBoxFlat.new()
 	track.bg_color = Color(217.0 / 255.0, 217.0 / 255.0, 217.0 / 255.0, 0.72)
 	track.set_corner_radius_all(8)
 	track.set_content_margin_all(0.0)
+	track.content_margin_top = 6.0
+	track.content_margin_bottom = 6.0
 	slider.add_theme_stylebox_override("slider", track)
-	slider.add_theme_stylebox_override("grabber_area", track.duplicate())
-	slider.add_theme_stylebox_override("grabber_area_highlight", track.duplicate())
+	var fill := track.duplicate() as StyleBoxFlat
+	fill.bg_color = Color("ed9567")
+	slider.add_theme_stylebox_override("grabber_area", fill)
+	var highlighted := fill.duplicate() as StyleBoxFlat
+	highlighted.bg_color = Color("ffcf9e")
+	slider.add_theme_stylebox_override("grabber_area_highlight", highlighted)
 	slider.add_theme_icon_override("grabber", UiHelpers.MENU_SLIDER_THUMB)
 	slider.add_theme_icon_override("grabber_highlight", UiHelpers.MENU_SLIDER_THUMB)
 	slider.add_theme_icon_override("grabber_disabled", UiHelpers.MENU_SLIDER_THUMB)
@@ -326,7 +339,7 @@ func _render_language() -> void:
 		var choice: Dictionary = choices[index]
 		var language_code := String(choice["code"])
 		var y := 298.0 + 114.0 * index
-		var option := _add_option("", Vector2(78.0, y), Vector2(600.0, 80.0), Vector2.ZERO,
+		var option := _add_option("", Vector2(78.0, y), Vector2(600.0, 88.0), Vector2.ZERO,
 			_choose_language.bind(language_code))
 		var outer := TextureRect.new()
 		outer.texture = choice["outer"]
@@ -355,7 +368,7 @@ func _choose_language(code: String) -> void:
 func _render_screen() -> void:
 	_add_header(_tr(&"settings.screen_title"))
 	var settings: Dictionary = SettingsService.get_settings()
-	var fullscreen_row := _add_option("", Vector2(78.0, 298.0), Vector2(600.0, 80.0), Vector2.ZERO,
+	var fullscreen_row := _add_option("", Vector2(78.0, 298.0), Vector2(600.0, 88.0), Vector2.ZERO,
 		_toggle_fullscreen)
 	var outer := TextureRect.new()
 	outer.texture = UiHelpers.MENU_RADIO_OUTER
@@ -382,7 +395,7 @@ func _render_screen() -> void:
 		Vector2(106.0, 440.0), Vector2(365.0, 85.0), 64)
 	var resolution := OptionButton.new()
 	resolution.position = Vector2(461.0, 450.0)
-	resolution.size = Vector2(311.0, 66.0)
+	resolution.size = Vector2(311.0, 88.0)
 	resolution.add_theme_font_override("font", UiHelpers.MENU_FONT)
 	resolution.add_theme_font_size_override("font_size", 36)
 	resolution.add_theme_color_override("font_color", Color.WHITE)
@@ -410,11 +423,16 @@ func _render_screen() -> void:
 	arrow.rotation_degrees = 91.37
 	arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	arrow.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_add_display_hint(Vector2(106.0, 560.0), Vector2(1100.0, 120.0), 30)
+
+func _add_display_hint(at: Vector2, bounds: Vector2, font_size: int) -> void:
+	var hint := UiHelpers.add_menu_label(_canvas, _tr(&"settings.window_resolution_hint"), at, bounds, font_size)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 func _add_back_button() -> void:
 	var index := _rows.size()
 	var back := UiHelpers.make_menu_option(_canvas, _tr(&"ui.back"), Vector2(81.0, 787.0),
-		Vector2(421.0, 73.0), 40, Vector2(8.0, 0.0), _back_from_header)
+		Vector2(421.0, 88.0), 40, Vector2(8.0, 0.0), _back_from_header)
 	_rows.append(back)
 	var button: Button = back["button"]
 	button.mouse_entered.connect(_select_menu_row.bind(index))
@@ -422,13 +440,21 @@ func _add_back_button() -> void:
 
 func _toggle_fullscreen() -> void:
 	var current := bool(SettingsService.get_settings().get("fullscreen", false))
-	SettingsService.apply_settings({"fullscreen": not current})
+	var result := SettingsService.apply_settings({"fullscreen": not current})
 	_render_page()
+	if not result.ok:
+		show_feedback(_tr(&"settings.external_window_required"))
 
 func _on_resolution_selected(index: int) -> void:
 	if index >= 0 and index < RESOLUTIONS.size():
-		SettingsService.apply_settings({"resolution": RESOLUTIONS[index]})
-		_render_page()
+		var result := SettingsService.apply_settings({"resolution": RESOLUTIONS[index]})
+		# Keep the active OptionButton alive while its native popup finishes closing.
+		# Rebuilding here frees a visible popup and also loses keyboard focus.
+		if not result.ok:
+			for control in _canvas.get_children():
+				if control is OptionButton:
+					control.select(RESOLUTIONS.find(String(SettingsService.get_settings()["resolution"])))
+			show_feedback(_tr(&"settings.external_window_required"))
 
 func _format_resolution(value: String) -> String:
 	return value.replace("x", " x ")
@@ -494,7 +520,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if event.keycode == KEY_ESCAPE:
 		_back_from_header()
-	get_viewport().set_input_as_handled()
+		get_viewport().set_input_as_handled()
 
 func _tr(key: StringName) -> String:
 	return get_tree().root.get_node("LocalizationDB").translate_key(key)

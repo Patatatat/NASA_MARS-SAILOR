@@ -6,9 +6,11 @@ signal continue_requested()
 
 const AUTOSAVE_PATH := "user://saves/autosave.json"
 const SETTINGS_MENU_SCENE: PackedScene = preload("res://scenes/ui/settings_menu.tscn")
+const CREDITS_MENU_SCENE: PackedScene = preload("res://scenes/ui/credits_menu.tscn")
 
 var _canvas: Control
 var _settings_menu: SettingsMenu
+var _credits_menu: Control
 var _page: StringName = &"main"
 var _rows: Array[Dictionary] = []
 var _selected_index := -1
@@ -27,6 +29,8 @@ func _ready() -> void:
 
 func _render_main() -> void:
 	_page = &"main"
+	if is_visible_in_tree():
+		AudioManager.set_context(&"menu")
 	_canvas.visible = true
 	UiHelpers.clear(_canvas)
 	UiHelpers.add_menu_background(_canvas, Vector2(-128.0, 178.0))
@@ -41,17 +45,17 @@ func _render_main() -> void:
 	title.autowrap_mode = TextServer.AUTOWRAP_OFF
 	title.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 
-	_add_menu_row(_tr(&"menu.continue"), Vector2(81.0, 452.0), Vector2(421.0, 73.0), 40,
+	_add_menu_row(_tr(&"menu.continue"), Vector2(81.0, 452.0), Vector2(421.0, 88.0), 40,
 		Vector2(10.0, 0.0), _continue_or_start, true)
 	_continue_button = _rows.back()["button"]
-	_add_menu_row(_tr(&"menu.new_game"), Vector2(81.0, 545.0), Vector2(421.0, 73.0), 40,
+	_add_menu_row(_tr(&"menu.new_game"), Vector2(81.0, 545.0), Vector2(421.0, 88.0), 40,
 		Vector2.ZERO, _show_select)
 	_new_game_button = _rows.back()["button"]
-	_add_menu_row(_tr(&"menu.settings"), Vector2(81.0, 638.0), Vector2(421.0, 73.0), 40,
+	_add_menu_row(_tr(&"menu.settings"), Vector2(81.0, 638.0), Vector2(421.0, 88.0), 40,
 		Vector2.ZERO, _show_settings)
-	_add_menu_row(_tr(&"menu.credits"), Vector2(81.0, 731.0), Vector2(421.0, 73.0), 40,
+	_add_menu_row(_tr(&"menu.credits"), Vector2(81.0, 731.0), Vector2(421.0, 88.0), 40,
 		Vector2.ZERO, _show_credits)
-	_add_menu_row(_tr(&"ui.back"), Vector2(81.0, 824.0), Vector2(421.0, 73.0), 40,
+	_add_menu_row(_tr(&"menu.quit"), Vector2(81.0, 824.0), Vector2(421.0, 88.0), 40,
 		Vector2(8.0, 0.0), _quit)
 
 	var has_save := FileAccess.file_exists(AUTOSAVE_PATH)
@@ -62,7 +66,9 @@ func _render_main() -> void:
 	refresh_availability()
 
 func show_main_menu() -> void:
+	_close_credits()
 	if is_instance_valid(_settings_menu):
+		UiHelpers._disconnect_observers(_settings_menu)
 		remove_child(_settings_menu)
 		_settings_menu.queue_free()
 		_settings_menu = null
@@ -103,6 +109,8 @@ func refresh_availability() -> void:
 
 func _show_select() -> void:
 	_page = &"select"
+	if is_visible_in_tree():
+		AudioManager.set_context(&"selection")
 	UiHelpers.clear(_canvas)
 	var background := ColorRect.new()
 	background.color = Color("0b0e18")
@@ -115,7 +123,7 @@ func _show_select() -> void:
 	_canvas.add_child(_chooser)
 	_chooser.start_requested.connect(func(ids: Array[StringName]): start_requested.emit(ids))
 	_rows.clear()
-	_add_menu_row(_tr(&"ui.back"), Vector2(81.0, 980.0), Vector2(421.0, 73.0), 40,
+	_add_menu_row(_tr(&"ui.back"), Vector2(81.0, 980.0), Vector2(421.0, 88.0), 40,
 		Vector2(8.0, 0.0), _render_main)
 	_back_button = _rows.back()["button"]
 	for index in _rows.size():
@@ -123,6 +131,8 @@ func _show_select() -> void:
 	_back_button.grab_focus()
 
 func _show_settings() -> void:
+	if is_instance_valid(_settings_menu):
+		return
 	_page = &"settings"
 	_canvas.visible = false
 	_settings_menu = SETTINGS_MENU_SCENE.instantiate() as SettingsMenu
@@ -132,19 +142,33 @@ func _show_settings() -> void:
 
 func _return_from_settings() -> void:
 	if is_instance_valid(_settings_menu):
+		UiHelpers._disconnect_observers(_settings_menu)
 		remove_child(_settings_menu)
 		_settings_menu.queue_free()
 		_settings_menu = null
 	_render_main()
 
 func _show_credits() -> void:
-	if is_instance_valid(_message):
-		_message.queue_free()
-	_message = UiHelpers.add_menu_label(_canvas, _tr(&"ui.credits_message"),
-		Vector2(81.0, 895.0), Vector2(900.0, 55.0), 24)
-	_message.modulate.a = 0.0
-	var tween := _message.create_tween()
-	tween.tween_property(_message, "modulate:a", 1.0, 0.2)
+	if is_instance_valid(_credits_menu):
+		return
+	_page = &"credits"
+	_canvas.visible = false
+	_credits_menu = CREDITS_MENU_SCENE.instantiate()
+	add_child(_credits_menu)
+	_credits_menu.back_requested.connect(_return_from_credits)
+
+func _close_credits() -> void:
+	if not is_instance_valid(_credits_menu):
+		return
+	UiHelpers._disconnect_observers(_credits_menu)
+	remove_child(_credits_menu)
+	_credits_menu.queue_free()
+	_credits_menu = null
+
+func _return_from_credits() -> void:
+	_close_credits()
+	_render_main()
+	(_rows[3]["button"] as Button).grab_focus()
 
 func _quit() -> void:
 	if OS.has_feature("web"):
@@ -174,9 +198,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.keycode == KEY_ESCAPE:
 		if _page == &"select":
 			_render_main()
-		elif _page == &"main":
-			_quit()
-		get_viewport().set_input_as_handled()
+			get_viewport().set_input_as_handled()
 
 func _tr(key: StringName) -> String:
 	return get_tree().root.get_node("LocalizationDB").translate_key(key)

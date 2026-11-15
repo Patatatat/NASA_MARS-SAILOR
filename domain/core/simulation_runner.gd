@@ -18,6 +18,11 @@ func update(real_delta: float) -> void:
 	while accumulator + 0.000001 >= STEP_SECONDS and GameState.is_running():
 		accumulator -= STEP_SECONDS
 		_step(STEP_SECONDS)
+		if bool(GameState.data.get("clock", {}).get("paused", false)):
+			# A guided objective may pause during a tick. Discard time spent reading,
+			# rather than replaying the rest of this frame when the player resumes.
+			accumulator = 0.0
+			break
 
 func advance_to_sol(target_sol: int) -> GameContracts.ValidationResult:
 	if target_sol <= int(GameState.data["clock"]["sol"]):

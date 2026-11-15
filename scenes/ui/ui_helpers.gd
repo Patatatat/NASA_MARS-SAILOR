@@ -141,6 +141,36 @@ static func label(text_value: String, size: int = 18) -> Label:
 	node.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return node
 
+static func add_si_mark(portrait: TextureRect, font_size: int) -> Label:
+	var mark := Label.new()
+	mark.name = "SIMark"
+	mark.text = "S.I."
+	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mark.add_theme_font_override("font", MENU_FONT)
+	mark.add_theme_font_size_override("font_size", font_size)
+	mark.add_theme_color_override("font_color", Color(1.0, 0.97, 0.92, 0.85))
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.03, 0.04, 0.06, 0.65)
+	style.set_corner_radius_all(4)
+	style.content_margin_left = 5
+	style.content_margin_right = 5
+	style.content_margin_top = 1
+	style.content_margin_bottom = 1
+	mark.add_theme_stylebox_override("normal", style)
+	portrait.add_child(mark)
+	var place_mark := func():
+		if portrait.texture == null:
+			return
+		var texture_size := portrait.texture.get_size()
+		var image_scale := minf(portrait.size.x / texture_size.x, portrait.size.y / texture_size.y)
+		var image_size := texture_size * image_scale
+		mark.size = mark.get_combined_minimum_size()
+		# Anchor to the fitted image, including letterboxing in the robot column.
+		mark.position = (portrait.size + image_size) * 0.5 - mark.size - Vector2(3, 3)
+	portrait.resized.connect(place_mark)
+	place_mark.call()
+	return mark
+
 static func button(text_value: String, action: Callable, primary: bool = false) -> Button:
 	var node := Button.new()
 	node.text = text_value

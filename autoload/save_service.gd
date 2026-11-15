@@ -133,6 +133,14 @@ func _validate(value: Dictionary) -> bool:
 			return false
 	if not value.get("tutorial", {}).get("completed", []) is Array or not value.get("tutorial", {}).get("skipped", false) is bool:
 		return false
+	for flag in ["guided", "initialized", "pause_owned"]:
+		if not value.get("tutorial", {}).get(flag, false) is bool:
+			return false
+	if not value.get("tutorial", {}).get("current", "") is String:
+		return false
+	for step in value.get("tutorial", {}).get("completed", []):
+		if not step is String:
+			return false
 	var life: Dictionary = value["life_support"]
 	if not life.get("supply", {}) is Dictionary or not _amounts(life.get("shortages", {})) or not _number(life.get("oxygen_leak_per_sol", 0), 0):
 		return false

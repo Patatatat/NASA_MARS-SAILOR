@@ -25,6 +25,7 @@ SaveService="*res://autoload/save_service.gd"
 LocalizationDB="*res://autoload/localization_db.gd"
 NasaDataCatalog="*res://autoload/nasa_data_catalog.gd"
 SettingsService="*res://autoload/settings_service.gd"
+AudioManager="*res://autoload/audio_manager.gd"
 
 [display]
 

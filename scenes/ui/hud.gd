@@ -26,6 +26,7 @@ var _views: Dictionary = {}
 var _toolbar: Dictionary = {}
 var _active_panel: StringName = &"workspace"
 var _time: TimeControls
+var _tutorial_button: Button
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -82,6 +83,7 @@ func _ready() -> void:
 	_guide = GuideCard.new()
 	_guide.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	add_child(_guide)
+	_guide.layout_requested.connect(_layout_guide)
 	var footer := HFlowContainer.new()
 	footer.add_theme_constant_override("h_separation", 8)
 	footer.add_theme_constant_override("v_separation", 6)
@@ -93,6 +95,10 @@ func _ready() -> void:
 	_save_button = UiHelpers.button("", func(): save_requested.emit())
 	_pause_button = UiHelpers.button("", func(): pause_requested.emit())
 	footer.add_child(_save_button)
+	_tutorial_button = UiHelpers.button("", func():
+		if services.has("dialogue"):
+			services["dialogue"].recall_tutorial())
+	footer.add_child(_tutorial_button)
 	footer.add_child(_pause_button)
 	_final = FinalResultView.new()
 	add_child(_final)
@@ -101,10 +107,11 @@ func _ready() -> void:
 	SignalBus.language_changed.connect(_refresh_buttons)
 	SignalBus.state_restored.connect(rebuild_from_state)
 	SignalBus.game_over.connect(func(_result): rebuild_from_state())
+	SignalBus.guide_dialogue_changed.connect(func(_id, _state): _refresh_tutorial_button())
 	_workspace.tab_opened.connect(func(_id): show_panel(&"workspace"))
 	_guide.focus_requested.connect(focus_target)
 	resized.connect(_layout)
-	_map_space.resized.connect(func(): call_deferred("_update_camera"))
+	_map_space.resized.connect(func(): call_deferred("_update_camera"); call_deferred("_layout_guide"))
 	_refresh_buttons()
 	show_panel(&"workspace")
 	configure(services, world)
@@ -161,7 +168,14 @@ func _layout_guide() -> void:
 	if not is_instance_valid(_guide) or size.x <= 0.0 or size.y <= 0.0:
 		return
 	var width := minf(size.x - 24.0, clampf(size.x * 0.62, 300.0, 860.0))
-	var height := minf(size.y - 24.0, maxf(170.0, width * 0.31))
+	var height := minf(size.y - 24.0, 340.0)
+	if _guide.tutorial_mode and is_instance_valid(_map_space):
+		var area := _map_space.get_global_rect()
+		width = maxf(300.0, minf(660.0, area.size.x - 16.0))
+		height = maxf(200.0, minf(360.0, area.size.y - 16.0))
+		_guide.size = Vector2(width, height)
+		_guide.position = Vector2(area.position.x + 8.0, area.end.y - height - 8.0)
+		return
 	_guide.size = Vector2(width, height)
 	_guide.position = (size - _guide.size) * 0.5
 
@@ -212,8 +226,26 @@ func _on_target_selected(id: StringName) -> void:
 		show_panel(&"inspector")
 
 func focus_target(id: StringName) -> void:
-	if String(id).begins_with("ui:workspace_"):
-		_workspace.open_tab(StringName(String(id).trim_prefix("ui:workspace_")))
+	if String(id).begins_with("ui:tutorial_") and services.has("dialogue"):
+		var kind := StringName(String(id).trim_prefix("ui:tutorial_"))
+		var cell: Vector2i = services["dialogue"].tutorial_build_site(kind)
+		_workspace._build_type = kind
+		_workspace._build_cell = cell
+		_workspace._coordinates_open = true
+		_workspace.open_tab(&"build")
+		if world != null:
+			world.camera_rig.focus_cell(cell)
+			world.begin_placement(kind)
+			var definition := BuildingDefinition.from_balance(kind)
+			world.preview.show_at(cell, definition.footprint, services["building"].validate_placement(GameContracts.PlacementRequest.new(kind, cell)).ok)
+	elif String(id).begins_with("ui:workspace_"):
+		var tab := StringName(String(id).trim_prefix("ui:workspace_"))
+		if tab == &"laboratory" and services.has("dialogue"):
+			var step: Dictionary = services["dialogue"].get_tutorial_step()
+			var condition := String(step.get("condition", ""))
+			if condition.get_slice(":", 0) in ["research", "workers", "unlocked"]:
+				_workspace._research_choice = condition.get_slice(":", 1)
+		_workspace.open_tab(tab)
 	elif id == &"ui:time_controls":
 		_time._pause.grab_focus()
 	elif id == &"world:scan_sector":
@@ -232,6 +264,16 @@ func rebuild_from_state() -> void:
 	_report.refresh()
 	_final.refresh()
 	_time.refresh()
+	_refresh_tutorial_button()
+
+func _refresh_tutorial_button() -> void:
+	if not is_instance_valid(_tutorial_button):
+		return
+	var step: Dictionary = services["dialogue"].get_tutorial_step() if services.has("dialogue") else {}
+	var skipped: bool = GameState.data.get("tutorial", {}).get("skipped", false)
+	_tutorial_button.visible = not step.is_empty() or skipped
+	_tutorial_button.text = UiHelpers.translated(&"onboarding.reactivate") if skipped else UiHelpers.translated(&"onboarding.goal", {"step": step.get("index", 1), "total": step.get("total", 19)})
+	_tutorial_button.tooltip_text = UiHelpers.translated(&"onboarding.recall")
 
 func show_message(value: String) -> void:
 	_workspace._feedback.text = value
@@ -248,3 +290,4 @@ func _refresh_buttons(_code: StringName = &"") -> void:
 		_toolbar[id].text = UiHelpers.translated(StringName("ui.toolbar.%s" % id))
 	_dock_title.text = UiHelpers.translated(StringName("ui.panel.%s" % _active_panel))
 	_back.text = UiHelpers.translated(&"ui.tools_back")
+	_refresh_tutorial_button()

@@ -33,6 +33,7 @@ func _ready() -> void:
 	$Interface.add_child(pause_menu)
 	pause_menu.hide()
 	_wire_services()
+	SignalBus.building_changed.connect(_refresh_building_power)
 	menu.start_requested.connect(_start_new)
 	menu.continue_requested.connect(_continue_game)
 	hud.save_requested.connect(_save_game)
@@ -51,6 +52,8 @@ func _ready() -> void:
 		menu.show_message(LocalizationDB.translate_key(&"error.invalid_balance"))
 
 func _exit_tree() -> void:
+	if SignalBus.building_changed.is_connected(_refresh_building_power):
+		SignalBus.building_changed.disconnect(_refresh_building_power)
 	dialogue.shutdown()
 	if SignalBus.building_changed.is_connected(crew.on_building_changed):
 		SignalBus.building_changed.disconnect(crew.on_building_changed)
@@ -68,6 +71,10 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	session.update(delta)
+
+func _refresh_building_power(_id: StringName, _change: StringName) -> void:
+	# Paused construction must still update connection/power previews for research.
+	power.step(0.0)
 
 func _wire_services() -> void:
 	ledger.report = report
@@ -131,7 +138,9 @@ func _start_new(profile_ids: Array[StringName]) -> void:
 	power.step(0.0)
 	hud.rebuild_from_state()
 	SaveService.save_to_slot(SAVE_SLOT)
+	AudioManager.reset_gameplay_playlist()
 	_show_game()
+	AudioManager.play_milestone(&"stage")
 
 func _continue_game() -> void:
 	var result := SaveService.load_from_slot(SAVE_SLOT)
@@ -188,6 +197,7 @@ func _autosave_after_result(_result: StringName) -> void:
 	SaveService.save_to_slot(SAVE_SLOT)
 
 func _show_menu() -> void:
+	AudioManager.set_context(&"menu")
 	pause_menu.hide()
 	menu.refresh_availability()
 	menu.visible = true
@@ -196,6 +206,7 @@ func _show_menu() -> void:
 	world.process_mode = Node.PROCESS_MODE_DISABLED
 
 func _show_game() -> void:
+	AudioManager.set_context(&"gameplay")
 	pause_menu.hide()
 	menu.visible = false
 	world.visible = true

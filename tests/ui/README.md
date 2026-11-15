@@ -1,5 +1,29 @@
 # R4 — Interfaz y contenido
 
+## Créditos y referencias de los modelos
+
+```powershell
+node tools/godot-mcp/check-playable.mjs res://tests/ui/run_credits_tests.tscn credits-result.json
+```
+
+Audita equipo, once tarjetas de edificios, quince enlaces NASA/NTRS, navegación,
+desplazamiento y diseño en cuatro resoluciones y ambos idiomas, sin iniciar gameplay.
+Procedencia y evidencias: [informe de créditos](../../docs/credits-review/REVIEW.md).
+
+## Pruebas del menú actual
+
+La suite aislada de menú y selección no inicia gameplay:
+
+```powershell
+node tools/godot-mcp/check-playable.mjs res://tests/ui/run_menu_regressions.tscn menu-result.json
+```
+
+Revisa sonido, resolución, pantalla completa en ventana independiente, idioma,
+selección mediante ratón/teclado, persistencia y límites en seis resoluciones.
+Registro y evidencia: [docs/menu-review/BUGS.md](../../docs/menu-review/BUGS.md).
+Las suites antiguas de flujo completo y layout aún contienen referencias al
+menú anterior a `350643c`; esta suite utiliza los controles actuales.
+
 > Estado actual: Main ya integra los servicios y las pantallas. Las notas de
 > integración de abajo documentan la entrega original. La revisión actual está
 > en `docs/ui-review/REVIEW.md`; incluye la auditoría gráfica multirresolución.

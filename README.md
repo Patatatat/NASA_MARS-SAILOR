@@ -5,11 +5,28 @@ Registro de bugs corregidos, reproducciones y pruebas adversariales:
 día/noche y comprobaciones de guardado, producción, tareas y cohetes.
 
 Abre `project.godot` con Godot 4.7.2 y pulsa **F5**. La escena de entrada es
-`scenes/integration/main.tscn`. Elige Nueva partida y cuatro astronautas; puedes
-repetir perfiles. Los servicios reales de simulación, mundo, misión e interfaz
+`scenes/integration/main.tscn`. Elige Nueva partida y cuatro astronautas distintos.
+Los servicios reales de simulación, mundo, misión e interfaz
 están conectados; los dobles de pruebas no forman parte del juego.
 
+En **Créditos** encontrarás al equipo de desarrollo y once tarjetas sobre las
+referencias utilizadas para los edificios 3D, con quince enlaces NASA/NTRS
+verificados. Cada tarjeta distingue la investigación real de la adaptación artística.
+Procedencia y pruebas: [informe de créditos](docs/credits-review/REVIEW.md).
+
+Los retratos de selección y el robot del tutorial llevan una marca **S.I.**
+(Super intelligence) para identificar sus imágenes generadas.
+
 ## Primer recorrido
+
+En una partida nueva, el robot ofrece **Aprender conmigo**: una guía de 19 objetivos
+que comprueba tus acciones y pausa para explicar. Usa **Mostrar objetivo** para abrir
+el panel adecuado y marcar ubicaciones de construcción; el robot no construye por ti.
+**Objetivo** recupera el paso actual y **Ayuda** permite retomarlo o revisarlo desde
+el inicio. El progreso se guarda con la partida. Puedes omitir la guía.
+
+La comparación de cuatro rutas de inicio, las pruebas y las capturas están en
+[docs/tutorial-review/REVIEW.md](docs/tutorial-review/REVIEW.md).
 
 1. Construir: coloca un túnel en **14,17** y un laboratorio en **14,18**.
 2. Laboratorio: inicia Panel solar y asigna **8 horas** a dos astronautas.
@@ -31,7 +48,8 @@ abre su inspector en el mismo panel; **Paneles** vuelve a las herramientas.
 WASD/flechas desplazan la cámara; rueda acerca/aleja; clic izquierdo selecciona
 o coloca; clic derecho cancela la colocación. **Espacio** pausa o continúa y
 **Esc** cierra el panel y cancela la colocación. Escribir en un campo no mueve
-la cámara. Las alertas no pausan el juego.
+la cámara. Las alertas normales no pausan el juego. Si elegiste la guía paso a paso,
+el robot pausa también ante una emergencia para que puedas leer y actuar.
 
 Los botones **Informe**, **Historial** y **Ayuda** tienen etiquetas explícitas.
 **Demo** abre controles de demostración que ejecutan la simulación normal y no
