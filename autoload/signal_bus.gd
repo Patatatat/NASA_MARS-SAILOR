@@ -1,0 +1,18 @@
+extends Node
+
+signal tick_advanced(sim_seconds: float)
+signal sol_started(sol: int)
+signal sol_ended(sol: int)
+signal resources_changed(delta: Dictionary, reason: String)
+signal energy_changed(snapshot: GameContracts.EnergySnapshot)
+signal building_changed(building_id: StringName, change_type: StringName)
+signal building_log_added(building_id: StringName, entry: RefCounted)
+signal crew_changed(crew_id: StringName)
+signal event_changed(event_id: StringName, state: StringName)
+signal rocket_changed(rocket_id: StringName, state: StringName)
+signal research_changed(tech_id: StringName, state: StringName)
+signal log_entry_added(entry: RefCounted)
+signal guide_dialogue_changed(dialogue_id: StringName, state: StringName)
+signal language_changed(language: StringName)
+signal state_restored()
+signal game_over(result: StringName)

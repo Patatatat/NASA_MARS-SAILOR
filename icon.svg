@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#101b37"/><stop offset="1" stop-color="#33425a"/></linearGradient>
+    <linearGradient id="mars" x2="0" y2="1"><stop stop-color="#e78b66"/><stop offset="1" stop-color="#a64d42"/></linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="20" fill="url(#sky)"/>
+  <circle cx="94" cy="30" r="12" fill="#f6cfa5"/>
+  <path d="M0 84 Q30 70 63 83 T128 76 V128 H0Z" fill="url(#mars)"/>
+  <path d="M0 103 Q50 88 80 106 T128 98 V128 H0Z" fill="#873e3b" opacity=".55"/>
+  <path d="M25 91 V74 Q25 58 42 58 H59 Q76 58 76 74 V91Z" fill="#e2edf0" stroke="#293c52" stroke-width="4"/>
+  <path d="M35 75 Q51 64 66 75 V91 H35Z" fill="#5cb3c7"/>
+  <path d="M77 83 H99 V91 H77Z" fill="#dce9e6" stroke="#293c52" stroke-width="3"/>
+  <path d="M89 83 V62" stroke="#dce9e6" stroke-width="4"/>
+  <path d="M80 62 H107 L102 74 H85Z" fill="#78a7bd" stroke="#293c52" stroke-width="3"/>
+  <circle cx="16" cy="24" r="2" fill="#fff"/><circle cx="42" cy="34" r="1.5" fill="#fff"/>
+</svg>

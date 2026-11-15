@@ -1,107 +1,294 @@
 {
-  "schema_version": 1,
-  "grid_size": 32,
-  "map_sizes": [16, 24, 32],
-  "map_obstacle_ratio": 0.08,
-  "sol_seconds": 60,
-  "target_sols": 42,
-  "day_seconds": 40,
-  "energy_capacity": 240,
-  "energy_discharge_rate": 12,
-  "initial": {"regolith": 100, "energy": 160, "air": 80, "food": 260},
-  "consumption_per_crew_per_sol": {"air": 2, "food": 4},
-  "health_loss_per_missing_unit": 10,
-  "engineer_multiplier": 1.2,
-  "botanist_multiplier": 1.25,
-  "technician_multiplier": 0.8,
-  "scientist_upgrade_duration_multiplier": 0.75,
-  "summary": {
-    "window_sols": 2, "reserve_target_sols": 1, "resilience_neutral": 0.5,
-    "critical_health": 25, "critical_reserve_sols": 0.25, "max_causes": 4
-  },
-  "maintenance": {
-    "interval_sols": 4, "global_gap_seconds": 60, "max_pending": 2,
-    "degrade_after_sols": 1, "shutdown_after_sols": 2, "shutdown_duration_sols": 2,
-    "degraded_multiplier": 0.7, "reactivation_regolith": 5,
-    "session_max_real_seconds": 15, "max_attempts": 2, "robot_difficulty_multiplier": 0.8
-  },
-  "upgrades": {
-    "solar": {"regolith": 10, "duration_seconds": 20, "power_supply": 8, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0},
-    "reactor": {"regolith": 25, "duration_seconds": 25, "power_supply": 20, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0},
-    "oxygen_generator": {"regolith": 15, "duration_seconds": 20, "power_supply": 0, "power_demand": 5, "air_per_sol": 18, "food_per_sol": 0},
-    "greenhouse": {"regolith": 15, "duration_seconds": 25, "power_supply": 0, "power_demand": 4, "air_per_sol": 3, "food_per_sol": 25},
-    "laboratory": {"regolith": 10, "duration_seconds": 20, "power_supply": 0, "power_demand": 1, "air_per_sol": 0, "food_per_sol": 0}
-  },
-  "events": {
-    "warning_seconds": 20,
-    "storm": {"probability": 0.6, "start_sols_min": 5, "start_sols_max": 16, "duration_sols": 2, "solar_multiplier": 0.25},
-    "solar_particles": {"probability": 0.5, "start_sols_min": 20, "start_sols_max": 32, "duration_sols": 1, "dose_per_sol": 35}
-  },
-  "radiation": {"ambient_dose_per_sol": 1, "medic_multiplier": 0.75, "shelter_multiplier": 0.25, "buried_multiplier": 0.4, "damage_threshold": 40, "health_loss_per_dose": 2,
-    "bury_regolith": 30, "bury_seconds": 60},
-  "roberts": {
-    "duration_sols": 2, "power_demand": 2, "storm_loss_probability": 0.25,
-    "geologist_yield_multiplier": 1.25, "geologist_risk_multiplier": 0.75,
-    "destinations": {
-      "ice": {"resource": "food", "amount": 45, "loss_probability": 0.15},
-      "quarry": {"resource": "regolith", "amount": 25, "loss_probability": 0.05},
-      "wreckage": {"resource": "regolith", "amount": 20, "loss_probability": 0.25}
-    }
-  },
-  "buildings": {
-    "habitat": {"regolith": 0, "build_seconds": 0, "power_supply": 0, "power_demand": 1, "air_per_sol": 0, "food_per_sol": 0},
-    "solar": {"regolith": 15, "build_seconds": 5, "power_supply": 5, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0},
-    "reactor": {"regolith": 45, "build_seconds": 10, "power_supply": 14, "power_demand": 0, "air_per_sol": 0, "food_per_sol": 0},
-    "oxygen_generator": {"regolith": 20, "build_seconds": 5, "power_supply": 0, "power_demand": 4, "air_per_sol": 12, "food_per_sol": 0},
-    "greenhouse": {"regolith": 25, "build_seconds": 10, "power_supply": 0, "power_demand": 3, "air_per_sol": 2, "food_per_sol": 20},
-    "laboratory": {"regolith": 20, "build_seconds": 10, "power_supply": 0, "power_demand": 2, "air_per_sol": 0, "food_per_sol": 0}
-  },
-  "survival": {
-    "storm_damage": 0.45,
-    "repair_regolith": 5,
-    "repair_seconds": 30,
-    "crop_decay_per_second": 0.25,
-    "crop_recovery_per_second": 0.1,
-    "night_threshold": 0.4,
-    "salvage_energy": 20,
-    "salvage_seconds": 60,
-    "salvage_regolith": 12,
-    "lotus_regolith": 12,
-    "lotus_energy": 30,
-    "lotus_damage_multiplier": 0.5,
-    "shelter_food_multiplier": 0.5,
-    "outside_dose_per_second": 0.015
-  },
-  "scenarios": {
-    "frontier": {
-      "name": "Horizonte rojo",
-      "description": "Reservas estándar. Diseña una base capaz de respirar durante la noche.",
-      "energy_limit": 240,
-      "food_limit": 260,
-      "storm_min": 5,
-      "storm_max": 16,
-      "storm_probability": 0.6,
-      "damaged_greenhouse": false
-    },
-    "eclipse": {
-      "name": "Contra el polvo",
-      "description": "Batería corta y tormenta segura entre soles 2 y 4. Protege tu generación.",
-      "energy_limit": 65,
-      "food_limit": 260,
-      "storm_min": 2,
-      "storm_max": 4,
-      "storm_probability": 1.0,
-      "damaged_greenhouse": false
-    },
-    "harvest": {
-      "name": "Cosecha quebrada",
-      "description": "Invernadero heredado al 45% y solo 70 raciones. Reparar o construir: elige.",
-      "energy_limit": 160,
-      "food_limit": 70,
-      "storm_min": 8,
-      "storm_max": 14,
-      "storm_probability": 0.7,
-      "damaged_greenhouse": true
-    }
-  }
+	"meta": {
+		"schema_version": 1.0,
+		"all_values_are_starting_balance": true
+	},
+	"time": {
+		"sol_seconds_x1": 60.0,
+		"speed_multipliers": [
+			0.5,
+			1.0,
+			2.0,
+			4.0
+		],
+		"total_sols": 42.0,
+		"last_rocket_sol": 28.0
+	},
+	"map": {
+		"initial_buildable_size": 32.0,
+		"maximum_size": 256.0,
+		"scan_sector_size": 8.0,
+		"energy_link_range_tiles": 3.0,
+		"reactor_exclusion_radius_tiles": 8.0
+	},
+	"astronaut": {
+		"initial_count": 4.0,
+		"consumption_per_sol": {
+			"oxygen": 1.0,
+			"water": 1.0,
+			"food": 1.0
+		},
+		"work_hours_per_sol": 12.0,
+		"sleep_hours_per_sol": 8.0,
+		"low_morale_threshold": 40.0,
+		"break_threshold": 15.0,
+		"morale_work_speed_at_low": 0.7,
+		"medical_global_morale_bonus": 0.18,
+		"radiation_limit": 100.0
+	},
+	"initial_inventory": {
+		"oxygen": 16.0,
+		"water": 16.0,
+		"food": 16.0,
+		"seeds": 4.0,
+		"iron_plates": 32.0,
+		"chips": 4.0,
+		"spare_parts": 2.0,
+		"medicine": 2.0,
+		"nuclear_core": 1.0
+	},
+	"buildings": {
+		"base": {
+			"size": [
+				3.0,
+				3.0
+			],
+			"power": 1.0,
+			"cost": {}
+		},
+		"isru": {
+			"size": [
+				2.0,
+				2.0
+			],
+			"power": 3.0,
+			"requires_aquifer": true,
+			"output_per_sol": {
+				"oxygen": 5.0,
+				"water": 5.0
+			},
+			"cost": {
+				"iron_plates": 12.0
+			}
+		},
+		"greenhouse": {
+			"size": [
+				3.0,
+				3.0
+			],
+			"power": 3.0,
+			"food_per_sol": 5.0,
+			"seed_cost": 1.0,
+			"crop_grace_without_power_sols": 0.5,
+			"cost": {
+				"iron_plates": 14.0
+			}
+		},
+		"tunnel": {
+			"size": [
+				1.0,
+				1.0
+			],
+			"cost": {
+				"iron_plates": 1.0
+			},
+			"regolith_shield_upgrade": {
+				"regolith": 2.0
+			}
+		},
+		"solar_panel": {
+			"size": [
+				3.0,
+				3.0
+			],
+			"day_output": 8.0,
+			"night_multiplier": 0.05,
+			"storm_multiplier": 0.3,
+			"cost": {
+				"iron_plates": 10.0
+			}
+		},
+		"battery": {
+			"size": [
+				2.0,
+				2.0
+			],
+			"capacity": 24.0,
+			"charge_rate": 8.0,
+			"cost": {
+				"iron_plates": 8.0,
+				"chips": 1.0
+			}
+		},
+		"laboratory": {
+			"size": [
+				2.0,
+				2.0
+			],
+			"power": 2.0,
+			"research_per_astronaut_hour": 1.0,
+			"cost": {
+				"iron_plates": 16.0,
+				"chips": 1.0
+			}
+		},
+		"mine": {
+			"size": [
+				6.0,
+				6.0
+			],
+			"power": 4.0,
+			"requires_mineral": true,
+			"output_per_sol": {
+				"iron_ore": 8.0,
+				"regolith": 8.0
+			},
+			"cost": {
+				"iron_plates": 22.0
+			}
+		},
+		"refinery": {
+			"size": [
+				3.0,
+				3.0
+			],
+			"power": 5.0,
+			"input_iron_ore": 8.0,
+			"output_iron_plates": 6.0,
+			"cost": {
+				"iron_plates": 28.0,
+				"chips": 2.0
+			}
+		},
+		"printer_3d": {
+			"size": [
+				2.0,
+				2.0
+			],
+			"power": 4.0,
+			"cost": {
+				"iron_plates": 18.0,
+				"chips": 3.0
+			},
+			"recipes": {
+				"spare_parts": {
+					"iron_plates": 3.0,
+					"chips": 1.0
+				},
+				"eva_suit": {
+					"iron_plates": 8.0,
+					"chips": 3.0
+				}
+			}
+		},
+		"reactor": {
+			"size": [
+				4.0,
+				4.0
+			],
+			"global_output": 10.0,
+			"core_duration_sols": 14.0,
+			"cost": {
+				"iron_plates": 40.0,
+				"chips": 6.0,
+				"nuclear_core": 1.0
+			}
+		},
+		"landing_pad": {
+			"size": [
+				6.0,
+				6.0
+			],
+			"mass_bonus": 20.0,
+			"cost": {
+				"iron_plates": 12.0,
+				"regolith": 24.0
+			}
+		}
+	},
+	"research": {
+		"solar_panel": 12.0,
+		"battery": 14.0,
+		"satellite_scan": 18.0,
+		"mine": 20.0,
+		"refinery": 26.0,
+		"printer_3d": 30.0,
+		"eva": 16.0,
+		"tunnel_shielding": 14.0,
+		"landing_pad": 22.0,
+		"reactor": 42.0
+	},
+	"scan": {
+		"energy_cost": 6.0,
+		"research_cost": 8.0,
+		"terrain_weights": {
+			"iron_regolith": 0.45,
+			"aquifer": 0.25,
+			"sterile": 0.3
+		}
+	},
+	"rockets": {
+		"arrival_sols": [
+			7.0,
+			14.0,
+			21.0,
+			28.0
+		],
+		"base_mass": 70.0,
+		"mass_min": 45.0,
+		"mass_max": 95.0,
+		"landing_zone_size": 8.0,
+		"landing_pad_mass_bonus": 20.0,
+		"cargo_mass": {
+			"chips": 1.0,
+			"nuclear_core": 8.0,
+			"seeds": 1.0,
+			"spare_parts": 2.0,
+			"medicine": 1.0,
+			"astronaut_replacement": 18.0
+		},
+		"salvage": {
+			"iron_plates": 12.0,
+			"chips": 1.0
+		}
+	},
+	"autonomy": {
+		"window_sols": 1.0,
+		"resources": [
+			"oxygen",
+			"water",
+			"food"
+		],
+		"earth_support_target_percent": 100.0,
+		"mass_change_per_percent_over_target": -0.25,
+		"mass_change_per_percent_under_target": 0.25
+	},
+	"events": {
+		"random_events_start_sol": 22.0,
+		"max_active": 1.0,
+		"dust_storm": {
+			"warning_sols": 1.0,
+			"solar_multiplier": 0.3,
+			"duration_sols": [
+				2.0,
+				4.0
+			],
+			"panel_dust_per_sol": 0.15
+		},
+		"solar_flare": {
+			"warning_sols": 2.0,
+			"duration_sols": [
+				1.0,
+				2.0
+			],
+			"eva_dose_multiplier": 2.5,
+			"construction_dose_multiplier": 1.8
+		},
+		"tunnel_breach": {
+			"oxygen_loss_per_sol": 4.0,
+			"repair_hours": 3.0,
+			"repair_dose": 8.0,
+			"spare_parts_safe_repair_cost": 1.0
+		}
+	}
 }

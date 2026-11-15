@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "schema_version": 1,
+    "data_mode": "archived",
+    "retrieved_on": "2026-11-14",
+    "submission_requirement": "A verified DONKI flare record is bundled; the game uses it for context only."
+  },
+  "sources": [
+    {
+      "id": "nasa_donki",
+      "provider": "NASA",
+      "title": "DONKI Space Weather Database",
+      "url": "https://kauai.ccmc.gsfc.nasa.gov/CMEscoreboard/prediction/detail/3177",
+      "retrieved_on": "2026-11-14",
+      "data_mode": "archived",
+      "used_for": ["solar_flare_context", "solar_energetic_particle_context", "radiation_warning_examples"],
+      "explanation_key": "science.source.donki.explanation",
+      "model_limit_key": "science.source.donki.limit"
+    },
+    {
+      "id": "nasa_osdr_radlab",
+      "provider": "NASA OSDR",
+      "title": "RadLab Radiation Dosimetry Database",
+      "url": "https://visualization.osdr.nasa.gov/radlab/gui/overview",
+      "retrieved_on": "2026-11-14",
+      "data_mode": "archived",
+      "used_for": ["radiation_dose_explanation", "codex_science_card"],
+      "explanation_key": "science.source.radlab.explanation",
+      "model_limit_key": "science.source.radlab.limit"
+    },
+    {
+      "id": "nasa_mars_trek",
+      "provider": "NASA",
+      "title": "Mars Trek",
+      "url": "https://trek.nasa.gov/mars/",
+      "retrieved_on": "2026-11-14",
+      "data_mode": "archived",
+      "used_for": ["terrain_context", "site_inspiration", "codex_science_card"],
+      "explanation_key": "science.source.mars_trek.explanation",
+      "model_limit_key": "science.source.mars_trek.limit"
+    }
+  ],
+  "curated_donki_events": [
+    {
+      "id": "2024-05-10T06:27:00-FLR-001",
+      "kind": "solar_flare",
+      "class": "X3.9",
+      "peak_utc": "2024-05-10T06:54:00Z",
+      "source_id": "nasa_donki",
+      "source_url": "https://kauai.ccmc.gsfc.nasa.gov/CMEscoreboard/prediction/detail/3177",
+      "retrieved_on": "2026-11-14",
+      "note": "Historical solar event; not a Mars forecast or gameplay damage input."
+    }
+  ]
+}

@@ -1,15 +1,16 @@
+# Godot 4+ specific ignores
 .godot/
-exports/
-test-results/
-*.tmp
+/android/
+.test_*/
 
-# Material personal y referencias fuera del repositorio del equipo.
-/local-only/
-/.agents/
-/.obsidian/
+# Local MCP configuration and reproducible dependencies
+.codex/
+**/node_modules/
+**/.pnpm-store/
 
-# Carpetas locales del editor, si vuelven a generarse en la raíz.
-/export_templates/
-/feature_profiles/
-/script_templates/
-/text_editor_themes/
+# Credentials and local operating-system files
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db

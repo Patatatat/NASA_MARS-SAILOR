@@ -10,24 +10,37 @@ config_version=5
 
 [application]
 
-config/name="MarSins - 42 soles"
-run/main_scene="res://scenes/MenuMarsSinner.tscn"
+config/name="BEYOND OUR HOME"
+run/main_scene="res://scenes/integration/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
 
 [autoload]
 
-SettingsManager="*res://scripts/settings_manager.gd"
+SignalBus="*res://autoload/signal_bus.gd"
+ConfigDB="*res://autoload/config_db.gd"
+GameState="*res://autoload/game_state.gd"
+GameClock="*res://autoload/game_clock.gd"
+SaveService="*res://autoload/save_service.gd"
+LocalizationDB="*res://autoload/localization_db.gd"
+NasaDataCatalog="*res://autoload/nasa_data_catalog.gd"
+SettingsService="*res://autoload/settings_service.gd"
 
 [display]
 
-window/size/viewport_width=1600
-window/size/viewport_height=900
-window/size/window_width_override=1440
-window/size/window_height_override=810
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/size/window_width_override=1600
+window/size/window_height_override=900
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
 [rendering]
 
+rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
