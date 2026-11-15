@@ -1,10 +1,14 @@
 # MarSins · Base inicial de simulación
 
-Base del carril de Rafael, verificable con Godot **4.7.2.stable.official.ed1daf0bf**. F5 inicia en una escena independiente para seleccionar cuatro especialistas y después abre el tablero de simulación; F6 ejecuta la escena abierta. No es todavía la UI final del juego ni una entrega web.
+Base del carril de Rafael, verificable con Godot **4.7.2.stable.official.ed1daf0bf**. F5 abre el menú principal de Andrés; Jugar conduce a la selección de cuatro especialistas y después al tablero. F6 ejecuta la escena abierta. No es todavía la UI final del juego ni una entrega web.
+
+La fusión con `andres/interfaz` conserva las reglas/HUD de Rafael y añade menú principal, preferencias persistentes de audio/pantalla/idioma, traducciones y atajos. En Ajustes del HUD, las flechas recorren Sonido, Pantalla e Idioma. El volumen controla los buses Master/Music/SFX. Espacio inicia/pausa; Esc o Tab abre Ajustes; A/D o flechas laterales giran; W/S o flechas verticales cambian zoom. Se conservan rueda pulsada para desplazar y F11. Los botones Cómo jugar/Créditos del menú de Andrés todavía no tienen sus pantallas conectadas.
 
 Incluye selección 4/6, mapa isométrico con tamaño de área sorteado por semilla (16×16, 24×24 o 32×32), formas irregulares y terreno bloqueado; giro y zoom; construcción con costo de regolito; cuatro reservas (regolito, energía almacenada, oxígeno y Alimento combinado de agua + comida); salud por tripulante; tormentas y partículas solares en ventanas reproducibles; dosis individual, refugio, enterramiento, dos ROBERTS, mejoras, mantenimiento y resúmenes. El ciclo nominal usa 42 soles de 60 segundos con 40 segundos de día y 20 de noche. Balance provisional; faltan el sistema de decisiones de crisis, escenarios iniciales adicionales, fichas de tecnologías NASA conectadas a mecánicas y la UI final.
 
 La migración actual sigue [la propuesta del bucle para el hackathon](docs/PROPUESTA_BUCLE_HACKATHON.md). Las listas de pasos de prueba que siguen describen el balance previo y están pendientes de actualización para este contrato.
+
+El runner actual usa `tests/test_current_simulation.gd` (cuatro recursos/42 soles), historial, recorrido de interfaz y arranque. `test_simulation.gd` y `test_run_summary.gd` se conservan como suites históricas del esquema de masa/agua; no se ejecutan automáticamente porque sus datos y resultados esperados corresponden a reglas sustituidas. Detalles de la fusión: [docs/INTEGRACION_ANDRES.md](docs/INTEGRACION_ANDRES.md).
 
 ## Prueba manual
 

@@ -11,8 +11,12 @@ config_version=5
 [application]
 
 config/name="MarSins - Base de simulación"
-run/main_scene="res://scenes/crew_selection.tscn"
+run/main_scene="res://scenes/MenuMarsSinner.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[autoload]
+
+SettingsManager="*res://scripts/settings_manager.gd"
 
 [display]
 

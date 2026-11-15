@@ -1,5 +1,7 @@
 # Verificación de la base inicial
 
+Verificación más reciente tras fusionar la base local con Andrés: **78 comprobaciones de simulación vigente y 57 de interfaz, 0 fallos**, más historial, importación y arranque. El cambio local a cuatro recursos y 42 soles ya estaba presente antes de la fusión y se conserva; las cifras históricas siguientes pertenecen a versiones anteriores. El runner ahora ejecuta `test_current_simulation.gd` en lugar de los scripts que aún dependen de masa/agua y 12 soles. Ver [INTEGRACION_ANDRES.md](INTEGRACION_ANDRES.md) para alcance, decisiones y pendientes; no confundir esta verificación con cobertura completa del balance nuevo.
+
 Ampliación para escritorio/navegador: base 1600×900 (ventana inicial 1440×810), HUD adaptable y pantalla completa con F11/botón. Verificación más reciente: **407 comprobaciones de simulación, 168 de resumen y 50 de integración, 0 fallos**, más historial/importación/arranque. Los 15 casos nuevos comprueban viewport completo, límites del panel/barra y ausencia de cruces entre paneles/acciones/cámara en 1280×720, 1600×900 y 1920×1080. Captura OpenGL de 1600×900 revisada; persisten los mensajes de shader ya documentados. No se probó exportación web ni la solicitud real de fullscreen del navegador.
 
 ## Resumen final de partida

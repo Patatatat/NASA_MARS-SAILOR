@@ -3,6 +3,8 @@ extends Control
 
 const Simulation = preload("res://domain/simulation.gd")
 const HistoryPanel = preload("res://scenes/history_panel.gd")
+const PreferencesPanel = preload("res://scenes/preferences_panel.gd")
+@onready var _settings_manager: Node = get_node("/root/SettingsManager")
 const Config = preload("res://domain/simulation_config.gd")
 const CREW_SELECTION_SCENE := "res://scenes/crew_selection.tscn"
 const SELECTED_CREW_META := "mars_selected_crew_ids"
@@ -96,6 +98,8 @@ var _building_toggle: Button
 var _active_hud_panel: String = ""
 var _summary_view: HistoryPanel
 var _shown_summary_generation: int = -1
+var _bury_button: Button
+var _radiation_rules: Dictionary = {}
 var _action_dock: PanelContainer
 var _resource_hud: PanelContainer
 var _sol_hud: PanelContainer
@@ -298,14 +302,36 @@ func _update_hud_layout() -> void:
 func _toggle_fullscreen() -> void:
 	var mode := DisplayServer.window_get_mode()
 	var fullscreen := mode in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fullscreen else DisplayServer.WINDOW_MODE_FULLSCREEN)
+	_settings_manager.set_fullscreen(not fullscreen)
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F11:
 		_toggle_fullscreen()
 		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo:
+		match event.keycode:
+			KEY_SPACE:
+				_toggle_run_state()
+			KEY_ESCAPE, KEY_TAB:
+				_toggle_hud_panel("settings")
+			KEY_A, KEY_LEFT:
+				_rotate_camera(-PI / 4.0)
+			KEY_D, KEY_RIGHT:
+				_rotate_camera(PI / 4.0)
+			KEY_W, KEY_UP:
+				_zoom_camera(-4.0)
+			KEY_S, KEY_DOWN:
+				_zoom_camera(4.0)
+			_:
+				return
+		get_viewport().set_input_as_handled()
+
+func _on_language_changed() -> void:
+	_last_rendered_snapshot.clear()
+	_render(simulation.get_snapshot())
 
 func _ready() -> void:
+	_settings_manager.language_changed.connect(_on_language_changed)
 	_load_selected_crew()
 	_apply_hud_theme()
 	var board_view := Control.new()
@@ -350,6 +376,7 @@ func _ready() -> void:
 	_show_result(simulation.configure(loaded.data))
 	_consumption_per_crew = loaded.data.consumption_per_crew_per_sol.duplicate(true)
 	_building_definitions = loaded.data.buildings.duplicate(true)
+	_radiation_rules = loaded.data.radiation.duplicate(true)
 	for selector: OptionButton in [_robot_choice, _destination_choice, _upgrade_choice]:
 		selector.item_selected.connect(func(_index: int) -> void: _render_domain(simulation.get_snapshot()))
 	simulation.state_updated.connect(_render)
@@ -794,6 +821,7 @@ func _cell_clicked(cell: Vector2i) -> void:
 
 func _show_result(result: Dictionary) -> void:
 	_message.text = "Orden aplicada." if result.ok else _error_text(result.error_code)
+	_settings_manager.translate_tree(_message)
 
 func _render(snapshot: Dictionary) -> void:
 	if not _last_rendered_snapshot.is_empty() and snapshot == _last_rendered_snapshot:
@@ -877,7 +905,7 @@ func _render(snapshot: Dictionary) -> void:
 			_cell_labels[index] = label
 		var state := "%ds" % building.remaining_seconds if building.remaining_seconds > 0 else ("ON" if building.powered else "OFF")
 		var short_names := {"habitat": "HÁBITAT", "solar": "SOLAR", "reactor": "REACTOR", "oxygen_generator": "OXÍGENO", "greenhouse": "CULTIVO", "laboratory": "LAB"}
-		_cell_labels[index].text = "%s N%d\n%s%s" % [short_names.get(kind, kind.to_upper()), building.level, state, " ↑%.1f" % building.upgrade_remaining_work if building.upgrade_remaining_work > 0 else ""]
+		_cell_labels[index].text = _settings_manager.translate_text("%s N%d\n%s%s" % [short_names.get(kind, kind.to_upper()), building.level, state, " ↑%.1f" % building.upgrade_remaining_work if building.upgrade_remaining_work > 0 else ""])
 		_cell_labels[index].position.y = _cell_visuals[index].scale.y * 1.15 + 0.2
 		if building.warning != "":
 			_cell_materials[index].albedo_color = Color("c76d58")
@@ -985,7 +1013,7 @@ func _create_domain_controls(_root: VBoxContainer) -> void:
 	_status = _hud_label(base)
 	_requirements = _hud_label(base)
 	_add_button(base, "Refugio / salir", func() -> void: _show_result(simulation.set_sheltered(not simulation.get_snapshot().get("sheltered", false))))
-	_add_button(base, "Enterrar hábitat · 10 masa + 20 regolito", func() -> void: _show_result(simulation.bury_habitat()))
+	_bury_button = _add_button(base, "Enterrar hábitat", func() -> void: _show_result(simulation.bury_habitat()))
 	_inspector = _hud_label(base)
 	_building_history = HistoryPanel.new()
 	_building_history.custom_minimum_size.y = 180
@@ -996,7 +1024,7 @@ func _create_domain_controls(_root: VBoxContainer) -> void:
 	_robot_choice.add_item("ROBERT 2")
 	missions.add_child(_robot_choice)
 	_destination_choice = OptionButton.new()
-	for destination_name: String in ["Hielo → agua", "Cantera → regolito", "Restos → masa"]:
+	for destination_name: String in ["Depósito → alimento", "Cantera → regolito", "Restos → regolito"]:
 		_destination_choice.add_item(destination_name)
 	missions.add_child(_destination_choice)
 	_add_button(missions, "Enviar · 2 potencia durante 2 soles", _send_robert)
@@ -1020,6 +1048,7 @@ func _create_domain_controls(_root: VBoxContainer) -> void:
 	_crew_status = _hud_label(crew)
 	_add_button(crew, "Cambiar tripulación", _open_crew_selection)
 	var settings: VBoxContainer = _hud_pages["settings"]
+	settings.add_child(PreferencesPanel.new())
 	_hud_label(settings).text = "Semilla para la próxima partida"
 	_seed = SpinBox.new()
 	_seed.min_value = 0
@@ -1029,6 +1058,7 @@ func _create_domain_controls(_root: VBoxContainer) -> void:
 	_add_button(settings, "Reiniciar partida", _reset)
 	_add_button(settings, "Restablecer cámara", _reset_camera)
 	_add_button(settings, "Pantalla completa · F11", _toggle_fullscreen)
+	_add_button(settings, "Volver al menú (termina esta partida)", _open_main_menu)
 	_hud_label(settings).text = "Celda vacía: construir. Edificio: inspeccionar.
 Botón derecho: girar vista. Rueda pulsada + arrastrar: desplazar. Rueda: acercar/alejar."
 	_log = HistoryPanel.new()
@@ -1096,11 +1126,15 @@ func _summary_cause_text(cause: Dictionary, snapshot: Dictionary) -> String:
 			return "El enterramiento del hábitat quedó terminado."
 	return "Hecho registrado: " + cause.kind
 
-func _add_button(parent: Node, text: String, callback: Callable) -> void:
+func _add_button(parent: Node, text: String, callback: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.pressed.connect(callback)
 	parent.add_child(button)
+	return button
+
+func _open_main_menu() -> void:
+	get_tree().change_scene_to_file("res://scenes/MenuMarsSinner.tscn")
 
 
 func _send_robert() -> void:
@@ -1160,6 +1194,8 @@ func _error_text(code: String) -> String:
 
 
 func _render_domain(snapshot: Dictionary) -> void:
+	_bury_button.text = "Enterrar hábitat · %.0f regolito" % float(_radiation_rules.get("bury_regolith", 0))
+	_bury_button.tooltip_text = "Trabajo: %d segundos" % int(_radiation_rules.get("bury_seconds", 0))
 	var new_run: bool = snapshot.run_generation != _history_generation
 	_render_run_summary(snapshot, new_run)
 	_history_generation = snapshot.run_generation
@@ -1229,3 +1265,4 @@ func _render_domain(snapshot: Dictionary) -> void:
 	for entry: Dictionary in snapshot.log:
 		lines.append("%ss · %s · %s" % [entry.seconds, entry.reason, entry.target])
 	_log.update_history("\n".join(lines), new_run)
+	_settings_manager.translate_tree(get_node("HUD"))

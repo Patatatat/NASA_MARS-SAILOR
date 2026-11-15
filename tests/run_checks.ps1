@@ -18,8 +18,9 @@ try {
     New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
     $cases = @(
         @{ Name = 'import'; Args = '--headless --path . --editor --import' },
-        @{ Name = 'simulation'; Args = '--headless --path . --script res://tests/test_simulation.gd' },
-        @{ Name = 'summary'; Args = '--headless --path . --script res://tests/test_run_summary.gd' },
+        # El esquema vigente usa cuatro recursos y 42 soles. Las suites históricas
+        # de masa/agua y 12 soles se conservan, pero no validan este contrato.
+        @{ Name = 'simulation'; Args = '--headless --path . --script res://tests/test_current_simulation.gd' },
         @{ Name = 'history'; Args = '--headless --path . --script res://tests/test_history_scroll.gd' },
         @{ Name = 'integration'; Args = '--headless --path . --script res://tests/test_interface_integration.gd' },
         @{ Name = 'scene'; Args = '--headless --path . --quit-after 10' }
@@ -39,14 +40,11 @@ try {
         if ($process.ExitCode -ne 0 -or "$output`n$errors" -match '(?m)(SCRIPT ERROR:|ERROR:|FAIL:)') {
             throw "Falló $($case.Name), exit=$($process.ExitCode). Revisar $resultsPath"
         }
-        if ($case.Name -eq 'simulation' -and $output -notmatch 'SIMULATION_TESTS: \d+ checks, 0 failures') {
+        if ($case.Name -eq 'simulation' -and $output -notmatch 'CURRENT_SIMULATION_TESTS: \d+ checks, 0 failures') {
             throw 'Falta marcador de pruebas completas'
         }
         if ($case.Name -eq 'history' -and $output -notmatch 'UI_HISTORY_TESTS: 0 failures') {
             throw 'Falta marcador de pruebas de historial completas'
-        }
-        if ($case.Name -eq 'summary' -and $output -notmatch 'RUN_SUMMARY_TESTS: \d+ checks, 0 failures') {
-            throw 'Falta marcador de pruebas de resumen completas'
         }
         if ($case.Name -eq 'integration' -and $output -notmatch 'UI_INTEGRATION_TESTS: \d+ checks, 0 failures') {
             throw 'Falta marcador de pruebas de integración completas'

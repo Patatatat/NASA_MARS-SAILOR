@@ -2,6 +2,8 @@
 
 > **Migración vigente (propuesta del hackathon):** esta base está migrando desde el contrato histórico descrito abajo. El estado ejecutable ahora usa cuatro existencias: `regolith`, `energy`, `air` y `food` (agua + comida). El sol nominal dura 60 s dentro de una partida de 42 soles; hay 40 s de día y 20 s de noche, energía almacenada con capacidad, y mapa de tamaño 16/24/32 con terreno bloqueado generado por semilla. Algunos detalles históricos de este documento aún no se han actualizado y no deben prevalecer sobre `docs/PROPUESTA_BUCLE_HACKATHON.md` ni el código vigente.
 
+> **Fusión con Andrés:** su commit `c76d83d` incorpora menú, ajustes de audio/pantalla/idioma y traducciones. La base prioritaria es `73ff6e8` (incluye cambios locales de Rafael preservados antes de fusionar). Los seis archivos de datos/dominio permanecen idénticos a esa base; no se restauraron recursos ni balances anteriores. Entrada actual: `MenuMarsSinner.tscn` → `crew_selection.tscn` → `simulation_lab.tscn`. Ver [resoluciones y pruebas de integración](INTEGRACION_ANDRES.md).
+
 ## Integración de interfaz y simulación
 
 La decisión confirmada por Rafael al integrar sustituye el mapa original: **32×32 y huellas de varias celdas**, con el tablero 3D de Andrés. Se conservan tiempos, costos y sistemas actuales de simulación. F5 abre `crew_selection.tscn`; la selección muestra las probabilidades configuradas antes de elegir equipo y pasa cuatro IDs validados a `simulation_lab.tscn`.

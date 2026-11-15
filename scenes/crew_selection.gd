@@ -3,6 +3,7 @@ extends Control
 
 const SIMULATION_SCENE := "res://scenes/simulation_lab.tscn"
 const Config = preload("res://domain/simulation_config.gd")
+@onready var _settings_manager: Node = get_node("/root/SettingsManager")
 const SELECTED_CREW_META := "mars_selected_crew_ids"
 const CREW_IDS := ["engineer", "medic", "botanist", "scientist", "geologist", "technician"]
 const CREW_NAMES := ["Ingeniería", "Medicina", "Botánica", "Ciencia", "Geología", "Sistemas"]
@@ -14,6 +15,7 @@ var _message_label: Label
 var _continue_button: Button
 
 func _ready() -> void:
+	_settings_manager.language_changed.connect(_on_language_changed)
 	var background := ColorRect.new()
 	background.color = Color("182532")
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -83,6 +85,7 @@ func _ready() -> void:
 	_continue_button.pressed.connect(_enter_simulation)
 	content.add_child(_continue_button)
 	_update_selection_state()
+	_settings_manager.translate_tree(self)
 
 func _get_initial_selection() -> Array:
 	var initial_selection: Array = DEFAULT_SELECTED_CREW.duplicate()
@@ -114,6 +117,10 @@ func _update_selection_state() -> void:
 			selected_count += 1
 	_selection_label.text = "Especialistas seleccionados: %d / 4" % selected_count
 	_continue_button.disabled = selected_count != 4
+	_settings_manager.translate_tree(self)
+
+func _on_language_changed() -> void:
+	_settings_manager.translate_tree(self)
 
 func _enter_simulation() -> void:
 	var selected: Array[String] = []
