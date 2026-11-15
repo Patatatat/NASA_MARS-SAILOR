@@ -162,7 +162,7 @@ func _test_events(data: Dictionary) -> void:
 	_check(sim.get_snapshot().event.state == "active", "evento de ventana variable activa a fecha sorteada")
 	_near(sim.get_snapshot().power.supply, 1.5, "tormenta reduce solar diurno")
 	sim.advance(60)
-	_near(sim.get_snapshot().power.supply, 6, "tormenta termina sin penalización residual")
+	_near(sim.get_snapshot().power.supply, 3.3, "tormenta deja 45% de daño por inacción: 6 × .55")
 
 func _test_summary_frames(data: Dictionary) -> void:
 	var a := _make(data)

@@ -42,6 +42,14 @@ var simulation := Simulation.new()
 var _building_history: HistoryPanel
 var _history_generation: int = -1
 var _history_building: String = ""
+var _decision_panel: VBoxContainer
+var _maintenance_console: VBoxContainer
+var _scenario_id: String = "frontier"
+var _survival_status: Label
+var _terrain_generation := -1
+var _rocks: Node3D
+var _sun: DirectionalLight3D
+var _world_environment: Environment
 var _seed: SpinBox
 var _robot_choice: OptionButton
 var _destination_choice: OptionButton
@@ -196,7 +204,7 @@ func _create_hud_workspace(parent: Control) -> void:
 	var pages := Control.new()
 	pages.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	drawer_content.add_child(pages)
-	var titles := {"base": "Base", "robots": "ROBERTS", "upgrades": "Mejoras", "maintenance": "Mantenimiento", "crew": "Tripulación", "history": "Historial", "summary": "Resumen", "settings": "Ajustes"}
+	var titles := {"decisions": "Decisiones", "base": "Base", "robots": "ROBERTS", "upgrades": "Mejoras", "maintenance": "Mantenimiento", "crew": "Tripulación", "history": "Historial", "summary": "Resumen", "settings": "Ajustes", "science": "Tecnología"}
 	for id: String in titles:
 		var button := Button.new()
 		button.text = titles[id]
@@ -729,6 +737,7 @@ func _create_isometric_board(viewport: SubViewport) -> void:
 
 	var environment_node := WorldEnvironment.new()
 	var environment := Environment.new()
+	_world_environment = environment
 	environment.background_mode = Environment.BG_COLOR
 	environment.background_color = Color("202b38")
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
@@ -750,14 +759,15 @@ func _create_isometric_board(viewport: SubViewport) -> void:
 	_update_camera()
 
 	var light := DirectionalLight3D.new()
+	_sun = light
 	light.rotation_degrees = Vector3(-55.0, -35.0, 0.0)
 	light.light_energy = 1.0
 	light.shadow_enabled = true
 	_board_root.add_child(light)
 
+	_rocks = Node3D.new()
+	_board_root.add_child(_rocks)
 	var center_offset := float(GRID_SIZE - 1) * TILE_SPACING / 2.0
-	var board_extent := GRID_SIZE * TILE_SPACING + 0.5
-	_add_box(_board_root, Vector3(board_extent, 0.16, board_extent), Vector3(0.0, -0.18, 0.0), Color("303d49"))
 	var tile_mesh := BoxMesh.new()
 	tile_mesh.size = Vector3(TILE_SIZE, 0.16, TILE_SIZE)
 	for y: int in range(GRID_SIZE):
@@ -792,6 +802,8 @@ func _select_cell_at(mouse_position: Vector2) -> void:
 	if distance < 0.0:
 		return
 	var hit := ray_origin + ray_direction * distance
+	_rocks = Node3D.new()
+	_board_root.add_child(_rocks)
 	var center_offset := float(GRID_SIZE - 1) * TILE_SPACING / 2.0
 	var cell_x := int(round((hit.x + center_offset) / TILE_SPACING))
 	var cell_y := int(round((hit.z + center_offset) / TILE_SPACING))
@@ -806,7 +818,7 @@ func _select_cell_at(mouse_position: Vector2) -> void:
 func _reset() -> void:
 	_close_hud_panel()
 	_inspected_id = "b1"
-	_show_result(simulation.reset_run(_selected_crew_ids, int(_seed.value)))
+	_show_result(simulation.reset_run(_selected_crew_ids, int(_seed.value), _scenario_id))
 	_maintenance_session = ""
 
 func _cell_clicked(cell: Vector2i) -> void:
@@ -829,6 +841,10 @@ func _render(snapshot: Dictionary) -> void:
 	_last_rendered_snapshot = snapshot.duplicate(true)
 	var resources: Dictionary = snapshot.resources
 	var power: Dictionary = snapshot.power
+	_sun.light_color = Color("ffd6a8") if power.is_day else Color("9bbfff")
+	_sun.light_energy = 1.15 if power.is_day else 0.3
+	_world_environment.background_color = Color("36262b") if power.is_day else Color("101a2e")
+	_world_environment.ambient_light_energy = 0.6 if power.is_day else 0.3
 	_run_button.disabled = snapshot.phase == "finished"
 	if snapshot.phase == "planning":
 		_run_button.text = "▶"
@@ -849,9 +865,11 @@ func _render(snapshot: Dictionary) -> void:
 		_camera_controls_panel.show()
 	for key: String in ["regolith", "air", "food"]:
 		_resource_labels[key].text = "%s: %.1f" % [_resource_name(key), resources[key]]
-	_resource_labels["energy"].text = "Energía: %.1f / %.1f" % [resources.energy, power.capacity]
+	for key: String in _resource_labels:
+		_resource_labels[key].modulate = Color("ff997a") if resources[key] < 20 else Color.WHITE
+	_resource_labels["energy"].text = "Energía: %.1f / %.1f\nGenera %.1f · demanda %.1f" % [resources.energy, power.capacity, power.supply, power.demand]
 	var phase_name: String = {"planning": "Planificación", "running": "En curso", "finished": "Finalizada"}[snapshot.phase]
-	_sol_label.text = "%s · Sol %d" % [phase_name, snapshot.sol]
+	_sol_label.text = "%s · Sol %d / 42 · %s" % [phase_name, snapshot.sol, "DÍA" if power.is_day else "NOCHE"]
 	if _build_menu != null and _build_menu.visible:
 		_refresh_build_menu()
 	_status.text = "%s | Sol %d · %d s | %s | Mapa %s %s | ×%s | Pausa: %s\nGeneración %.1f / demanda %.1f" % [snapshot.phase, snapshot.sol, snapshot.elapsed_seconds, "Día" if power.is_day else "Noche", str(snapshot.map.size), str(snapshot.map.shape), snapshot.speed, snapshot.paused, power.supply, power.demand]
@@ -861,6 +879,7 @@ func _render(snapshot: Dictionary) -> void:
 			alive += 1
 	_requirements.text = "Requeridos por sol (%d tripulantes): Oxígeno %.1f · Alimento combinado %.1f" % [alive, _consumption_per_crew.get("air", 0.0) * alive, _consumption_per_crew.get("food", 0.0) * alive]
 
+	_update_terrain(snapshot)
 	var buildings_by_cell: Dictionary = {}
 	var reserved_cells: Dictionary = {}
 	var blocked_cells: Dictionary = {}
@@ -878,7 +897,7 @@ func _render(snapshot: Dictionary) -> void:
 			elif reserved_cells.has(index):
 				_cell_materials[index].albedo_color = Color("71634f")
 			else:
-				_cell_materials[index].albedo_color = Color("b9a783") if (index % GRID_SIZE + int(index / GRID_SIZE)) % 2 == 0 else Color("a99169")
+				_cell_materials[index].albedo_color = Color("a46545").lerp(Color("c18a61"), float(posmod(index * 73 + int(snapshot.seed), 17)) / 17.0)
 			if _cell_labels[index] != null:
 				_cell_labels[index].queue_free()
 				_cell_labels[index] = null
@@ -904,8 +923,17 @@ func _render(snapshot: Dictionary) -> void:
 			_cell_nodes[index].add_child(label)
 			_cell_labels[index] = label
 		var state := "%ds" % building.remaining_seconds if building.remaining_seconds > 0 else ("ON" if building.powered else "OFF")
+		if building.covered: state = "PROTEGIDO · 0 energía"
+		elif building.repair_remaining > 0: state = "REPARANDO · %ds" % building.repair_remaining
+		elif building.night_cut: state = "CORTE NOCTURNO"
+		elif building.damage > 0: state += " · DAÑO %d%%" % roundi(building.damage * 100)
+		elif kind == "greenhouse": state += " · CULTIVO %d%%" % roundi(building.crop_health)
+		_cell_labels[index].modulate = Color("ffbe86") if building.damage > 0 or building.crop_health < 70 else Color.WHITE
 		var short_names := {"habitat": "HÁBITAT", "solar": "SOLAR", "reactor": "REACTOR", "oxygen_generator": "OXÍGENO", "greenhouse": "CULTIVO", "laboratory": "LAB"}
 		_cell_labels[index].text = _settings_manager.translate_text("%s N%d\n%s%s" % [short_names.get(kind, kind.to_upper()), building.level, state, " ↑%.1f" % building.upgrade_remaining_work if building.upgrade_remaining_work > 0 else ""])
+		for detail: Node in _cell_visuals[index].get_children():
+			if detail.name.begins_with("Plant"):
+				detail.material_override.albedo_color = Color("489b67").lerp(Color("976845"), 1.0 - building.crop_health / 100.0)
 		_cell_labels[index].position.y = _cell_visuals[index].scale.y * 1.15 + 0.2
 		if building.warning != "":
 			_cell_materials[index].albedo_color = Color("c76d58")
@@ -926,7 +954,7 @@ func _create_building_label() -> Label3D:
 	var label := Label3D.new()
 	label.font_size = 64
 	label.outline_size = 8
-	label.pixel_size = 0.016
+	label.pixel_size = 0.009
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
 	label.modulate = Color("f7f3e9")
@@ -964,6 +992,21 @@ func _create_building_visual(kind: String) -> Node3D:
 		"laboratory":
 			_add_box(root, Vector3(0.7, 0.52, 0.66), Vector3(0.0, 0.36, 0.0), Color("8292a0"))
 			_add_box(root, Vector3(0.48, 0.12, 0.48), Vector3(0.0, 0.68, 0.0), Color("c5d3d8"))
+	# Small repeated details make scale and purpose readable without imported art.
+	if kind == "solar":
+		for x: float in [-0.5, -0.25, 0.0, 0.25, 0.5]:
+			_add_box(root, Vector3(0.012, 0.015, 0.36), Vector3(x, 0.47, 0), Color("8bb3cb"))
+	elif kind == "greenhouse":
+		for x: float in [-0.25, 0, 0.25]:
+			for z: float in [-0.2, 0, 0.2]:
+				var plant := _add_sphere(root, 0.06, 0.16, Vector3(x, 0.73, z), Color("489b67"))
+				plant.name = "Plant%d" % root.get_child_count()
+	else:
+		for x: float in [-0.2, 0, 0.2]:
+			var window := _add_box(root, Vector3(0.09, 0.1, 0.03), Vector3(x, 0.45, 0.34), Color("79d8da"))
+			window.material_override.emission_enabled = true
+			window.material_override.emission = Color("388c93")
+		_add_cylinder(root, 0.014, 0.45, Vector3(0.18, 0.9, 0), Color("d0d7d4"))
 	var model_width: float = {"habitat": 0.72, "solar": 1.32, "reactor": 0.7, "oxygen_generator": 0.62, "greenhouse": 0.82, "laboratory": 0.7}.get(kind, 1.0)
 	var factor := float(simulation.get_building_footprint_size(kind)) * TILE_SPACING * 0.75 / model_width
 	root.scale = Vector3.ONE * factor
@@ -1018,7 +1061,16 @@ func _create_domain_controls(_root: VBoxContainer) -> void:
 	_building_history = HistoryPanel.new()
 	_building_history.custom_minimum_size.y = 180
 	base.add_child(_building_history)
+	_hud_label(base).text = "OBJETIVO · sobrevivir 42 soles.\n1. Construye energía, oxígeno y cultivo antes de iniciar.\n2. Atiende decisiones y mantenimiento.\n3. Recolecta, repara y reserva para la noche.\nReactor + oxígeno + cultivo cuestan 90 de regolito."
+	_survival_status = _hud_label(base)
+	_add_button(base, "Reparar seleccionado · 5 regolito / 30 s", func() -> void: _show_result(simulation.survival_command("repair", _inspected_id)))
+	_decision_panel = preload("res://scenes/decision_panel.gd").new()
+	_hud_pages["decisions"].add_child(_decision_panel)
+	_decision_panel.chosen.connect(func(id: String, option: String) -> void: _show_result(simulation.choose_decision(id, option)))
+	_create_science_card(_hud_pages["science"])
 	var missions: VBoxContainer = _hud_pages["robots"]
+	_hud_label(missions).text = "Cuadrilla exterior: 20 energía → 12 regolito tras 60 s. Añade dosis; se detiene en refugio."
+	_add_button(missions, "Enviar cuadrilla exterior", func() -> void: _show_result(simulation.survival_command("salvage")))
 	_robot_choice = OptionButton.new()
 	_robot_choice.add_item("ROBERT 1")
 	_robot_choice.add_item("ROBERT 2")
@@ -1035,12 +1087,13 @@ func _create_domain_controls(_root: VBoxContainer) -> void:
 	_add_button(upgrades, "Mejorar a nivel 2", _upgrade)
 	_upgrade_status = _hud_label(upgrades)
 	var maintenance: VBoxContainer = _hud_pages["maintenance"]
-	_hud_label(maintenance).text = "Mantenimiento · adaptador de prueba hasta integrar los minijuegos."
+	_hud_label(maintenance).text = "Intervenciones · 15 segundos reales, dos intentos. Una crisis suspende la sesión."
 	_maintenance_choice = OptionButton.new()
 	maintenance.add_child(_maintenance_choice)
 	_add_button(maintenance, "Atender", _begin_maintenance)
-	_add_button(maintenance, "Prueba: éxito", func() -> void: _maintenance_result(true))
-	_add_button(maintenance, "Prueba: fallo", func() -> void: _maintenance_result(false))
+	_maintenance_console = preload("res://scenes/maintenance_console.gd").new()
+	maintenance.add_child(_maintenance_console)
+	_maintenance_console.submitted.connect(func(success: bool) -> void: _maintenance_result(success))
 	_add_button(maintenance, "Abandonar", func() -> void: _maintenance_result(false, true))
 	_add_button(maintenance, "Reactivar", _reactivate)
 	_maintenance_status = _hud_label(maintenance)
@@ -1053,7 +1106,8 @@ func _create_domain_controls(_root: VBoxContainer) -> void:
 	_seed = SpinBox.new()
 	_seed.min_value = 0
 	_seed.max_value = 1000000
-	_seed.value = 1
+	_seed.value = int(get_tree().root.get_meta("mars_run_seed", 1))
+	_scenario_id = str(get_tree().root.get_meta("mars_scenario", "frontier"))
 	settings.add_child(_seed)
 	_add_button(settings, "Reiniciar partida", _reset)
 	_add_button(settings, "Restablecer cámara", _reset_camera)
@@ -1096,6 +1150,10 @@ func _render_run_summary(snapshot: Dictionary, reset_position: bool) -> void:
 	lines.append("\nHECHOS DE LA MISIÓN")
 	for cause: Dictionary in report.causes:
 		lines.append("• " + _summary_cause_text(cause, snapshot))
+	lines.append("\nDECISIONES Y CONSECUENCIAS")
+	for entry: Dictionary in snapshot.log:
+		if entry.reason in ["decision_taken", "decision_inaction", "storm_consequence", "flare_consequence", "crop_consequence", "repair_completed", "night_cut_ended", "salvage_returned"]:
+			lines.append(_survival_fact(entry))
 	_summary_view.update_history("\n".join(lines), reset_position)
 
 func _summary_cause_text(cause: Dictionary, snapshot: Dictionary) -> String:
@@ -1155,6 +1213,7 @@ func _begin_maintenance() -> void:
 	var result: Dictionary = simulation.begin_maintenance(str(_maintenance_choice.get_item_metadata(_maintenance_choice.selected)))
 	if result.ok:
 		_maintenance_session = result.result.id
+		_maintenance_console.update_session(simulation.get_snapshot(), _maintenance_session)
 	_show_result(result)
 
 
@@ -1175,6 +1234,12 @@ func _error_text(code: String) -> String:
 		"robert_unavailable": "Este ROBERT sigue en misión o se perdió. Selecciona otro o espera el regreso.",
 		"crew_sheltered": "Sal del refugio para iniciar una expedición o mejora.",
 		"insufficient_regolith": "No alcanza el regolito para esta acción.",
+		"insufficient_energy": "La batería no tiene energía suficiente para esta operación.",
+		"crew_unavailable": "La cuadrilla está refugiada o ya trabaja en esa operación.",
+		"repair_not_needed": "Este edificio no tiene daño ni cultivo que restaurar.",
+		"technology_unavailable": "Selecciona un panel solar que aún no tenga LOTUS.",
+		"decision_closed": "Esta decisión ya se resolvió o venció su plazo.",
+		"unknown_decision": "Esta situación ya no pertenece a la misión actual.",
 		"insufficient_resources": "No alcanza el regolito para proteger el hábitat.",
 		"max_level": "Este edificio ya está en nivel 2.",
 		"upgrade_in_progress": "Este edificio ya tiene una mejora en curso.",
@@ -1194,6 +1259,14 @@ func _error_text(code: String) -> String:
 
 
 func _render_domain(snapshot: Dictionary) -> void:
+	_decision_panel.update_state(snapshot)
+	_maintenance_console.update_session(snapshot, _maintenance_session)
+	var urgent := 0
+	for situation: Dictionary in snapshot.situations:
+		if situation.status == "active": urgent += 1
+	_hud_buttons["decisions"].text = "Decisiones (%d)" % urgent
+	_hud_buttons["decisions"].modulate = Color("ffc18b") if urgent > 0 else Color.WHITE
+	_survival_status.text = "Escenario: %s · semilla %s\nPrioridad: %s · salida exterior: %ds\nSelecciona un edificio para repararlo o instalar LOTUS." % [snapshot.scenario, snapshot.seed, snapshot.priority, snapshot.salvage.remaining]
 	_bury_button.text = "Enterrar hábitat · %.0f regolito" % float(_radiation_rules.get("bury_regolith", 0))
 	_bury_button.tooltip_text = "Trabajo: %d segundos" % int(_radiation_rules.get("bury_seconds", 0))
 	var new_run: bool = snapshot.run_generation != _history_generation
@@ -1213,6 +1286,12 @@ func _render_domain(snapshot: Dictionary) -> void:
 			_maintenance_choice.select(index)
 		maintenance_lines.append("%s: %s · edad %ds · intentos %d · sesión %s" % [building.id, building.maintenance.state, building.maintenance.age_seconds, building.maintenance.attempts, building.maintenance.session.get("state", "sin abrir")])
 	_maintenance_status.text = "Mantenimiento: " + " | ".join(maintenance_lines)
+	var pending_count := 0
+	for building: Dictionary in snapshot.buildings:
+		if building.maintenance.state in ["requested", "degraded", "shutdown"]:
+			pending_count += 1
+	_hud_buttons["maintenance"].text = "Mantenimiento (%d)" % pending_count
+	_hud_buttons["maintenance"].modulate = Color("ffc18b") if pending_count > 0 else Color.WHITE
 	var inspection: Dictionary = simulation.get_building_status(_inspected_id)
 	if inspection.ok:
 		var status: Dictionary = inspection.result
@@ -1222,6 +1301,9 @@ func _render_domain(snapshot: Dictionary) -> void:
 		var history: PackedStringArray = ["Historial del edificio " + status.id]
 		for entry: Dictionary in status.local_log:
 			history.append("%ss · %s · %s" % [entry.seconds, entry.reason, str(entry.details)])
+		for b: Dictionary in snapshot.buildings:
+			if b.id == status.id:
+				_inspector.text += "\nDaño %d%% · cultivo %d%% · reparación %ds · LOTUS %s" % [roundi(b.damage * 100), roundi(b.crop_health), b.repair_remaining, "instalado" if b.lotus else "sin instalar"]
 		_building_history.update_history("\n".join(history), new_run or _history_building != status.id)
 		_history_building = status.id
 	var event_text := "ninguno"
@@ -1263,6 +1345,53 @@ func _render_domain(snapshot: Dictionary) -> void:
 		lines.append("Último sol %s: variación %s\nBloqueos medidos: %s" % [report.sol, str(report.delta), str(report.blocked_seconds)])
 	lines.append("\nHistorial de eventos:")
 	for entry: Dictionary in snapshot.log:
-		lines.append("%ss · %s · %s" % [entry.seconds, entry.reason, entry.target])
+		lines.append(_survival_fact(entry))
 	_log.update_history("\n".join(lines), new_run)
 	_settings_manager.translate_tree(get_node("HUD"))
+
+func _create_science_card(parent: VBoxContainer) -> void:
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/science_sources.json"))
+	var card := RichTextLabel.new()
+	card.bbcode_enabled = true
+	card.fit_content = true
+	card.custom_minimum_size.y = 440
+	parent.add_child(card)
+	card.text = "[font_size=24]LOTUS · proteger también cuesta[/font_size]\n\n"
+	var source: Dictionary = data.lotus
+	card.append_text("%s\n\n%s\n\n%s\n\n%s\n\nProcedencia: %s · %s\nPatentes: %s\n%s\n%s\nConsultado: %s" % [source.title, source.description, source.gameplay, source.limitation, source.provider, source.reference, ", ".join(source.patents), source.holder, source.license_status, source.consulted_on])
+	var link := LinkButton.new()
+	link.text = "Abrir ficha oficial NASA ↗"
+	link.pressed.connect(func() -> void: OS.shell_open("https://technology.nasa.gov/patent/GSC-TOPS-262"))
+	parent.add_child(link)
+	_add_button(parent, "Instalar en solar seleccionado · 12 regolito + 30 energía", func() -> void: _show_result(simulation.survival_command("lotus", _inspected_id)))
+	_hud_label(parent).text = "30 s sin generación durante la instalación. Reduce a la mitad el daño por polvo; no elimina la pérdida de luz."
+
+func _survival_fact(entry: Dictionary) -> String:
+	var details: Dictionary = entry.get("details", {})
+	var labels := {"decision_taken": "Decisión", "decision_inaction": "Sin respuesta al plazo", "storm_consequence": "Polvo: daño y tiempo protegido", "flare_consequence": "Dosis tras partículas solares", "repair_completed": "Reparación completada", "night_cut_ended": "Amanecer: producción suspendida", "salvage_returned": "Cuadrilla: material recuperado"}
+	var result := ""
+	match entry.reason:
+		"decision_taken": result = "%s → %s" % [details.title, details.effect]
+		"decision_inaction": result = "El plazo venció; el peligro continuó sin intervención."
+		"storm_consequence": result = "Daño añadido %d%%; protegido %d s. Respuesta: %s." % [roundi(details.damage_added * 100), details.protected_seconds, details.decision_id]
+		"crop_consequence": result = "Cultivo al %d%%; prioridad %s. Respuesta: %s." % [roundi(details.crop_health), details.priority, details.decision_id]
+		"night_cut_ended": result = "Reanudado al amanecer; %d s sin producción. Respuesta: %s." % [details.production_lost_seconds, details.decision_id]
+		"repair_completed": result = "Rendimiento restaurado tras completar el trabajo. Orden: %s." % details.decision_id
+		"salvage_returned": result = "+%s regolito tras la salida exterior. Orden: %s." % [details.regolith, details.decision_id]
+		"flare_consequence": result = "Dosis acumulada por tripulante: %s. Refugio al cierre: %s." % [str(details.doses), "sí" if details.sheltered else "no"]
+		_: result = str(details)
+	return "%ss · %s · %s · %s" % [entry.seconds, labels.get(entry.reason, entry.reason), entry.target, result]
+
+func _update_terrain(snapshot: Dictionary) -> void:
+	if _terrain_generation == snapshot.run_generation:
+		return
+	_terrain_generation = snapshot.run_generation
+	for child: Node in _rocks.get_children():
+		_rocks.remove_child(child)
+		child.queue_free()
+	for index: int in range(_cell_nodes.size()):
+		_cell_nodes[index].visible = index not in snapshot.map.outside_cells
+	for index: int in snapshot.map.obstacle_cells:
+		var rock := _add_sphere(_rocks, TILE_SIZE * 0.4, TILE_SIZE * 0.65, _cell_nodes[index].position + Vector3(0, 0.3, 0), Color("79574b"))
+		rock.rotation_degrees = Vector3(13, index * 37 % 360, 18)
+		rock.scale = Vector3(1, 0.7 + float(index % 4) * 0.15, 0.9)

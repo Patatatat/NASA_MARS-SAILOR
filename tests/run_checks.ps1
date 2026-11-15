@@ -21,6 +21,7 @@ try {
         # El esquema vigente usa cuatro recursos y 42 soles. Las suites históricas
         # de masa/agua y 12 soles se conservan, pero no validan este contrato.
         @{ Name = 'simulation'; Args = '--headless --path . --script res://tests/test_current_simulation.gd' },
+        @{ Name = 'survival'; Args = '--headless --path . --script res://tests/test_survival_loop.gd' },
         @{ Name = 'history'; Args = '--headless --path . --script res://tests/test_history_scroll.gd' },
         @{ Name = 'integration'; Args = '--headless --path . --script res://tests/test_interface_integration.gd' },
         @{ Name = 'scene'; Args = '--headless --path . --quit-after 10' }
@@ -42,6 +43,9 @@ try {
         }
         if ($case.Name -eq 'simulation' -and $output -notmatch 'CURRENT_SIMULATION_TESTS: \d+ checks, 0 failures') {
             throw 'Falta marcador de pruebas completas'
+        }
+        if ($case.Name -eq 'survival' -and $output -notmatch 'SURVIVAL_LOOP_TESTS: \d+ checks, 0 failures') {
+            throw 'Falta marcador de supervivencia completa'
         }
         if ($case.Name -eq 'history' -and $output -notmatch 'UI_HISTORY_TESTS: 0 failures') {
             throw 'Falta marcador de pruebas de historial completas'

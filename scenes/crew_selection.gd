@@ -9,12 +9,18 @@ const CREW_IDS := ["engineer", "medic", "botanist", "scientist", "geologist", "t
 const CREW_NAMES := ["Ingeniería", "Medicina", "Botánica", "Ciencia", "Geología", "Sistemas"]
 const DEFAULT_SELECTED_CREW := ["engineer", "medic", "botanist", "technician"]
 
+var _scenario: OptionButton
+var _seed: SpinBox
+var _forecast: Label
+var _data: Dictionary
+const SCENARIOS := ["frontier", "eclipse", "harvest"]
 var _crew_checks: Array[CheckBox] = []
 var _selection_label: Label
 var _message_label: Label
 var _continue_button: Button
 
 func _ready() -> void:
+	_style_briefing()
 	_settings_manager.language_changed.connect(_on_language_changed)
 	var background := ColorRect.new()
 	background.color = Color("182532")
@@ -27,7 +33,7 @@ func _ready() -> void:
 	add_child(center)
 
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(640.0, 500.0)
+	panel.custom_minimum_size = Vector2(850.0, 680.0)
 	center.add_child(panel)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 16)
@@ -43,14 +49,31 @@ func _ready() -> void:
 	description.text = "Elige exactamente cuatro especialistas para iniciar la misión."
 	description.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	content.add_child(description)
-	var forecast := Label.new()
-	forecast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var loaded := Config.load_file()
-	if loaded.ok:
-		forecast.text = "Pronóstico: tormenta %d%% · partículas solares %d%%" % [roundi(loaded.data.events.storm.probability * 100), roundi(loaded.data.events.solar_particles.probability * 100)]
-	else:
-		forecast.text = "Configuración no disponible: " + str(loaded.error_code)
-	content.add_child(forecast)
+	_data = Config.load_file().data
+	_scenario = OptionButton.new()
+	for id: String in SCENARIOS:
+		_scenario.add_item(_data.scenarios[id].name)
+	content.add_child(_scenario)
+	_scenario.select(maxi(0, SCENARIOS.find(str(get_tree().root.get_meta("mars_scenario", "frontier")))))
+	var seed_row := HBoxContainer.new()
+	content.add_child(seed_row)
+	var seed_title := Label.new()
+	seed_title.text = "Semilla de misión"
+	seed_row.add_child(seed_title)
+	_seed = SpinBox.new()
+	_seed.max_value = 1000000
+	_seed.value = int(get_tree().root.get_meta("mars_run_seed", 1))
+	seed_row.add_child(_seed)
+	var shuffle := Button.new()
+	shuffle.text = "Nueva semilla"
+	shuffle.pressed.connect(func() -> void: _seed.value = randi_range(0, 1000000))
+	seed_row.add_child(shuffle)
+	_forecast = Label.new()
+	_forecast.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(_forecast)
+	_scenario.item_selected.connect(func(_index: int) -> void: _preview())
+	_seed.value_changed.connect(func(_value: float) -> void: _preview())
+	_preview()
 
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -62,7 +85,7 @@ func _ready() -> void:
 	var initial_selection := _get_initial_selection()
 	for index: int in range(CREW_IDS.size()):
 		var check := CheckBox.new()
-		check.text = CREW_NAMES[index]
+		check.text = CREW_NAMES[index] + "\n" + ["+20% generación eléctrica", "Menor dosis recibida", "Mayor producción de alimento", "Mejoras más rápidas", "Más regolito en expediciones", "−20% consumo del generador O₂"][index]
 		check.custom_minimum_size = Vector2(270.0, 54.0)
 		check.button_pressed = CREW_IDS[index] in initial_selection
 		check.add_theme_font_size_override("font_size", 20)
@@ -130,8 +153,40 @@ func _enter_simulation() -> void:
 	if selected.size() != 4:
 		_update_selection_state()
 		return
+	get_tree().root.set_meta("mars_run_seed", int(_seed.value))
+	get_tree().root.set_meta("mars_scenario", SCENARIOS[_scenario.selected])
 	get_tree().root.set_meta(SELECTED_CREW_META, selected)
 	var error_code := get_tree().change_scene_to_file(SIMULATION_SCENE)
 	if error_code != OK:
 		get_tree().root.remove_meta(SELECTED_CREW_META)
 		_message_label.text = "No se pudo abrir la simulación (%s)" % error_string(error_code)
+
+func _preview() -> void:
+	var sim = preload("res://domain/simulation.gd").new()
+	sim.configure(_data)
+	sim.reset_run(DEFAULT_SELECTED_CREW, int(_seed.value), SCENARIOS[_scenario.selected])
+	var snap: Dictionary = sim.get_snapshot()
+	_forecast.text = "%s\nMapa %s · %s. Tormenta %d%%: sol %d. Partículas %d%%: sol %d.\nMisma semilla y mismas órdenes repiten la misión. Duración: 42 soles de 60 s." % [_data.scenarios[SCENARIOS[_scenario.selected]].description, snap.map.size, snap.map.shape, roundi(snap.forecast.storm.probability * 100), snap.forecast.storm.start_sol, roundi(snap.forecast.solar_particles.probability * 100), snap.forecast.solar_particles.start_sol]
+
+func _style_briefing() -> void:
+	var design := Theme.new()
+	design.default_font_size = 18
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color("101e29")
+	panel.border_color = Color("537581")
+	panel.set_border_width_all(1)
+	panel.set_corner_radius_all(16)
+	panel.content_margin_left = 28
+	panel.content_margin_right = 28
+	panel.content_margin_top = 20
+	panel.content_margin_bottom = 20
+	design.set_stylebox("panel", "PanelContainer", panel)
+	for type_name: String in ["Button", "OptionButton"]:
+		for state: String in ["normal", "hover", "pressed", "disabled"]:
+			var button := panel.duplicate() as StyleBoxFlat
+			button.bg_color = Color("34545d") if state in ["hover", "pressed"] else Color("203541")
+			button.content_margin_top = 8
+			button.content_margin_bottom = 8
+			design.set_stylebox(state, type_name, button)
+	design.set_color("font_color", "Label", Color("dbe8e8"))
+	theme = design

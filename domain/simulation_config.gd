@@ -61,6 +61,32 @@ static func validate(value: Variant) -> Dictionary:
 	return {"ok": true, "error_code": "", "data": data.duplicate(true)}
 
 static func _validate_systems(data: Dictionary) -> String:
+	if not data.get("survival") is Dictionary or not data.get("scenarios") is Dictionary:
+		return "survival_or_scenarios"
+	for key: String in ["repair_regolith", "salvage_energy", "salvage_regolith", "lotus_regolith", "lotus_energy", "crop_decay_per_second", "crop_recovery_per_second", "outside_dose_per_second"]:
+		if not _number(data.survival.get(key), 0):
+			return "survival." + key
+	for key: String in ["repair_seconds", "salvage_seconds"]:
+		if not _integer(data.survival.get(key), 1):
+			return "survival." + key
+	for key: String in ["storm_damage", "night_threshold", "lotus_damage_multiplier", "shelter_food_multiplier"]:
+		if not _probability(data.survival.get(key)):
+			return "survival." + key
+	for id: String in ["frontier", "eclipse", "harvest"]:
+		var scenario: Variant = data.scenarios.get(id)
+		if not scenario is Dictionary:
+			return "scenarios." + id
+		for key: String in ["name", "description"]:
+			if not scenario.get(key) is String or scenario[key].is_empty():
+				return "scenario." + key
+		if not scenario.get("damaged_greenhouse") is bool:
+			return "scenario.greenhouse"
+		for key: String in ["energy_limit", "food_limit"]:
+			if not _number(scenario.get(key), 0):
+				return "scenario." + key
+		if not _integer(scenario.get("storm_min"), 2) or not _integer(scenario.get("storm_max"), 2) or scenario.storm_min > scenario.storm_max or not _probability(scenario.get("storm_probability")):
+			return "scenario.storm"
+
 	if not data.get("summary") is Dictionary:
 		return "summary"
 	var summary: Dictionary = data.summary

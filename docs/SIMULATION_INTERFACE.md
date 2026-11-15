@@ -1,4 +1,45 @@
-# Contrato de simulación · resumen final v1
+# Contrato de simulación · bucle de supervivencia
+
+## Entrega vigente · 14 de noviembre de 2026
+
+Esta sección reemplaza las descripciones históricas inferiores cuando discrepan. La autoridad de producto es `PROPUESTA_BUCLE_HACKATHON.md`. Entrada: menú → selección de escenario, semilla y cuatro especialistas → planificación → supervivencia → informe → reinicio. El sonido y los ajustes existentes quedan a cargo del compañero de audio; no se han modificado.
+
+### API añadida y estado
+
+- `reset_run(crew_ids, seed = 1, scenario_id = "frontier")`: admite `frontier`, `eclipse`, `harvest`; escenario desconocido no muta. Semilla y escenario viajan desde selección mediante metadatos del árbol; los demás consumidores pueden omitir el tercer argumento.
+- `choose_decision(situation_id, option_id)`: solo en ejecución, una opción activa antes de su plazo. Rechazar no muta; resolver cierra las demás opciones y promueve la cola. Máximo dos situaciones urgentes activas.
+- `survival_command("repair" | "lotus", building_id)` y `survival_command("salvage")`: validan recursos y disponibilidad antes de cobrar. Se pueden ordenar durante planificación; el trabajo comienza al ejecutar el reloj. Las reparaciones e instalaciones paran el edificio durante 30 s; el refugio pausa el trabajo exterior.
+- Snapshot añade `scenario`, `situations`, `decisions`, `priority`, `salvage`; cada edificio añade `damage`, `crop_health`, `covered`, `night_cut`, `repair_remaining`, `lotus` y referencias causales. El mapa distingue `outside_cells` y `obstacle_cells`, además de conservar `blocked_cells` para colocación.
+- El director de supervivencia es un colaborador interno de `Simulation`, no otro reloj ni una API para la interfaz. Los snapshots siguen siendo copias profundas. `run_generation` impide reutilizar decisiones de una partida anterior.
+
+### Reglas y unidades de juego
+
+Cuatro reservas: regolito, energía almacenada (capacidad 240), oxígeno y alimento combinado. No existe inventario de agua ni masa. 42 soles × 60 s; día 40 s y noche 20 s. Salud/dosis individuales. Todas las cifras son balance ficticio, no tasas científicas.
+
+| Acción o condición | Efecto inmediato | Consecuencia |
+| --- | --- | --- |
+| Cubrir solar durante aviso/tormenta | Generación 0 | Evita daño; consume reserva mientras siga el consumo |
+| Exponer/ignorar polvo | Mantiene generación reducida | Al acabar, +45% daño persistente; máximo acumulado 90% |
+| Refugio | Reduce dosis futura y pausa reparaciones | Cultivos producen 50%; salir restaura producción sin borrar dosis |
+| Corte nocturno | Suspende el consumidor indicado | Pierde producción; se reconecta al amanecer |
+| Prioridad de cultivo | Hábitat → cultivo → oxígeno → laboratorio | Puede desplazar producción respirable; aceptar conserva prioridad de oxígeno |
+| Reparación | 5 regolito, 30 s sin producción | Restaura daño y cultivo al completar; trabajo exterior aumenta dosis |
+| Cuadrilla exterior | 20 energía, 60 s de trabajo | +12 regolito una sola vez; dosis extra, pausa en refugio |
+| LOTUS solar | 12 regolito + 30 energía, 30 s sin producción | Mitad del daño de polvo; no elimina noche ni oscurecimiento |
+
+Sin energía, el cultivo pierde 0.25 puntos de salud/s hasta 10%; con energía recupera 0.1/s hasta 100%. Su salud multiplica la producción. El corte nocturno explícito conserva el cultivo pero pierde su producción. La exposición exterior añade dosis mientras hay trabajo, además de la radiación ambiental y de eventos.
+
+Horizonte rojo conserva las reservas de `initial`; Contra el polvo limita energía a 65 y garantiza tormenta entre soles 2–4; Cosecha quebrada limita alimento a 70 y comienza con cultivo al 45%. Los demás rangos están en `data/balance.json`. El pronóstico muestra probabilidades y fechas sorteadas, no el resultado oculto del sorteo. Misma versión, datos, semilla y órdenes reproducen el estado.
+
+### Interfaz, mantenimiento y trazabilidad
+
+Panel **Decisiones**: opciones con efecto, sacrificio y plazo antes de pulsar. Panel **Base**: tutorial breve, refugio, reparación del edificio seleccionado e inspector. Panel **ROBERTS**: expediciones y cuadrilla de recolección. Panel **Tecnología**: ficha educativa y aplicación de LOTUS al solar seleccionado. La ficha registra procedencia, patentes, estado de licencia y fecha en `data/science_sources.json`; la adaptación a solares es ficticia y no representa prestaciones NASA verificadas.
+
+Mantenimiento ya no muestra botones de éxito/fallo: ajuste de carga con tolerancia 5% y ecuación de conservación de átomos (coeficientes mínimos 2,2,1). Conserva el contrato `begin_maintenance` / `apply_maintenance_result` para que el equipo sustituya estos controles. La simulación controla límite de 15 s reales, intentos, suspensión y resultados únicos.
+
+Los hechos `decision_taken`, `decision_inaction`, `storm_consequence`, `flare_consequence`, `night_cut_ended`, `repair_completed`, `salvage_returned` aparecen en historial e informe final. El informe por sol referencia sus IDs, registra importaciones/gastos y causas de bloqueo (`storm_cover`, `night_cut`, `repair`). No se atribuyen muertes hipotéticas ni beneficios contrafactuales no calculados.
+
+## Contexto histórico de las integraciones anteriores
 
 > **Migración vigente (propuesta del hackathon):** esta base está migrando desde el contrato histórico descrito abajo. El estado ejecutable ahora usa cuatro existencias: `regolith`, `energy`, `air` y `food` (agua + comida). El sol nominal dura 60 s dentro de una partida de 42 soles; hay 40 s de día y 20 s de noche, energía almacenada con capacidad, y mapa de tamaño 16/24/32 con terreno bloqueado generado por semilla. Algunos detalles históricos de este documento aún no se han actualizado y no deben prevalecer sobre `docs/PROPUESTA_BUCLE_HACKATHON.md` ni el código vigente.
 

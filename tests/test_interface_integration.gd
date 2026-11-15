@@ -120,8 +120,10 @@ func _run() -> void:
 		lab.simulation.advance(1)
 	lab._begin_maintenance()
 	_check(not lab._maintenance_session.is_empty(), "panel abre sesión real de mantenimiento")
-	lab._maintenance_result(true)
-	_check(lab.simulation.get_snapshot().buildings[1].maintenance.state == "healthy", "resultado de prueba llega al dominio")
+	_check(lab._maintenance_console.visible, "sesión muestra intervención jugable")
+	lab._maintenance_console._slider.value = lab._maintenance_console._target
+	lab._maintenance_console._submit()
+	_check(lab.simulation.get_snapshot().buildings[1].maintenance.state == "healthy", "ajuste de carga real llega al dominio")
 	_check(not lab.simulation.get_snapshot().sol_reports.is_empty(), "informes por sol presentes")
 	lab._toggle_run_state()
 	var before: int = lab.simulation.get_snapshot().elapsed_seconds

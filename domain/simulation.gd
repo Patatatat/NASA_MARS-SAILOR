@@ -11,6 +11,7 @@ signal sol_report_ready(report: Dictionary)
 const Config = preload("res://domain/simulation_config.gd")
 const Maintenance = preload("res://domain/maintenance_system.gd")
 const SolReport = preload("res://domain/sol_report.gd")
+const SurvivalDirector = preload("res://domain/survival_director.gd")
 const RunSummary = preload("res://domain/run_summary.gd")
 const SPECIALISTS := ["engineer", "medic", "botanist", "scientist", "geologist", "technician"]
 const POWER_ORDER := ["habitat", "oxygen_generator", "greenhouse", "laboratory", "solar", "reactor"]
@@ -35,6 +36,7 @@ var _event_plan: Array[Dictionary] = []
 var _notifications: Array[Dictionary] = []
 var _maintenance := Maintenance.new()
 var _run_generation: int = 0
+var _director := SurvivalDirector.new()
 
 func _init(event_rng: RandomNumberGenerator = null, mission_rng: RandomNumberGenerator = null) -> void:
 	_event_rng = event_rng if event_rng != null else RandomNumberGenerator.new()
@@ -50,11 +52,13 @@ func configure(data: Dictionary) -> Dictionary:
 	_config = checked.data
 	return _reply(true)
 
-func reset_run(crew_ids: Array, run_seed: int = 1) -> Dictionary:
+func reset_run(crew_ids: Array, run_seed: int = 1, scenario_id: String = "frontier") -> Dictionary:
 	if _publishing:
 		return _reply(false, "busy")
 	if _config.is_empty():
 		return _reply(false, "not_configured")
+	if not _config.scenarios.has(scenario_id):
+		return _reply(false, "invalid_scenario")
 	if crew_ids.size() != 4:
 		return _reply(false, "select_four")
 	var crew: Array = []
@@ -72,6 +76,11 @@ func reset_run(crew_ids: Array, run_seed: int = 1) -> Dictionary:
 		"sol": 1, "completed_sols": 0, "paused": false, "speed": 1.0, "crew": crew,
 		"resources": _config.initial.duplicate(true), "buildings": [], "power": {},
 		"map": generated_map, "deficits": {"air": 0.0, "food": 0.0}, "log": [], "result": {}}
+	_state.scenario = scenario_id
+	var scenario: Dictionary = _config.scenarios[scenario_id]
+	if scenario_id != "frontier":
+		_state.resources.energy = minf(_state.resources.energy, scenario.energy_limit)
+		_state.resources.food = minf(_state.resources.food, scenario.food_limit)
 	_state.event = {}
 	_state.sheltered = false
 	_state.burial = {"state": "surface", "remaining_seconds": 0}
@@ -90,16 +99,25 @@ func reset_run(crew_ids: Array, run_seed: int = 1) -> Dictionary:
 	_event_plan.clear()
 	_notifications.clear()
 	for kind: String in ["storm", "solar_particles"]:
-		var definition: Dictionary = _config.events[kind]
+		var definition: Dictionary = _config.events[kind].duplicate(true)
+		if kind == "storm" and scenario_id != "frontier":
+			definition.start_sols_min = scenario.storm_min
+			definition.start_sols_max = scenario.storm_max
+			definition.probability = scenario.storm_probability
 		var start_sol := _event_rng.randi_range(int(definition.start_sols_min), int(definition.start_sols_max))
 		_event_plan.append({"kind": kind, "occurs": _roll(_event_rng, float(definition.probability)),
-			"start_seconds": (start_sol - 1) * int(_config.sol_seconds),
+			"probability": definition.probability, "start_seconds": (start_sol - 1) * int(_config.sol_seconds),
 			"duration_seconds": int(definition.duration_sols) * int(_config.sol_seconds), "state": "pending"})
 	_state.forecast = _build_forecast()
 	_accumulator = 0.0
 	_finished_emitted = false
 	var habitat_center := int((_config.grid_size - 1) / 2)
 	_state.buildings.append(_building("b1", "habitat", Vector2i(habitat_center, habitat_center), 0))
+	if scenario.damaged_greenhouse:
+		var greenhouse := _building("b2", "greenhouse", Vector2i(10, 15), 0)
+		greenhouse.crop_health = 45.0
+		_state.buildings.append(greenhouse)
+	_director.reset(_state, _config)
 	_resolve_power()
 	RunSummary.sample(_state, _config)
 	_publish()
@@ -113,6 +131,8 @@ func _generate_map() -> Dictionary:
 	var size := int(configured_sizes[_map_rng.randi_range(0, configured_sizes.size() - 1)])
 	var shape := "irregular" if _map_rng.randf() < 0.5 else "square"
 	var blocked: Array[int] = []
+	var outside: Array[int] = []
+	var obstacles: Array[int] = []
 	var center := float(_config.grid_size - 1) * 0.5
 	var half := float(size) * 0.5
 	for y: int in range(int(_config.grid_size)):
@@ -123,12 +143,15 @@ func _generate_map() -> Dictionary:
 			if inside and shape == "irregular" and maxf(dx, dy) > 3.0:
 				var edge_wave := sin(float(x) * 0.53) * 0.8 + cos(float(y) * 0.41) * 0.6
 				inside = maxf(dx, dy) < half - 1.5 + edge_wave
-			var protected_hub := dx <= 3.0 and dy <= 3.0
+			var protected_hub := dx <= 6.0 and dy <= 6.0
+			if not inside:
+				outside.append(y * int(_config.grid_size) + x)
 			if inside and not protected_hub and _map_rng.randf() < float(_config.map_obstacle_ratio):
 				inside = false
+				obstacles.append(y * int(_config.grid_size) + x)
 			if not inside:
 				blocked.append(y * int(_config.grid_size) + x)
-	return {"size": size, "shape": shape, "blocked_cells": blocked}
+	return {"size": size, "shape": shape, "blocked_cells": blocked, "outside_cells": outside, "obstacle_cells": obstacles}
 
 func _cell_is_blocked(cell: Vector2i) -> bool:
 	return int(cell.y * int(_config.grid_size) + cell.x) in _state.map.blocked_cells
@@ -176,7 +199,7 @@ func get_building_status(building_id: String) -> Dictionary:
 		return _reply(false, "unknown_building")
 	var status: Dictionary = building.duplicate(true)
 	status.definition = _definition(building).duplicate(true)
-	status.output_multiplier = _maintenance.multiplier(building)
+	status.output_multiplier = _maintenance.multiplier(building) * _director.multiplier(building)
 	status.active_event = _state.event.duplicate(true)
 	var bonus := float(_config.botanist_multiplier) if building.kind == "greenhouse" and _has_alive("botanist") else 1.0
 	var operating: bool = building.powered
@@ -200,6 +223,7 @@ func _build_forecast() -> Dictionary:
 	var forecast: Dictionary = _config.events.duplicate(true)
 	for planned: Dictionary in _event_plan:
 		var event: Dictionary = forecast[planned.kind]
+		event.probability = planned.probability
 		event.start_seconds = planned.start_seconds
 		event.duration_seconds = planned.duration_seconds
 		event.start_sol = int(planned.start_seconds / int(_config.sol_seconds)) + 1
@@ -466,6 +490,8 @@ func advance(real_seconds: float) -> Dictionary:
 func _tick() -> void:
 	_state.elapsed_seconds += 1
 	_update_events()
+	_director.before_step()
+	_drain_survival()
 	_maintenance.tick()
 	_drain_maintenance()
 	_resolve_power()
@@ -487,12 +513,18 @@ func _tick() -> void:
 				reason = "disabled"
 			elif building.maintenance.state == "shutdown":
 				reason = "maintenance_shutdown"
+			elif building.covered:
+				reason = "storm_cover"
+			elif building.night_cut:
+				reason = "night_cut"
+			elif building.repair_remaining > 0:
+				reason = "repair"
 			SolReport.blocked(_state.current_sol_report, building.id, reason)
 			continue
 		var definition: Dictionary = _definition(building)
 		var bonus := float(_config.botanist_multiplier) if building.kind == "greenhouse" and _has_alive("botanist") else 1.0
-		var air := float(definition.air_per_sol) * bonus * _maintenance.multiplier(building) / seconds_per_sol
-		var food := float(definition.food_per_sol) * bonus * _maintenance.multiplier(building) / seconds_per_sol
+		var air := float(definition.air_per_sol) * bonus * _maintenance.multiplier(building) * _director.multiplier(building) / seconds_per_sol
+		var food := float(definition.food_per_sol) * bonus * _maintenance.multiplier(building) * _director.multiplier(building) / seconds_per_sol
 		_state.resources.air += air
 		_state.resources.food += food
 		SolReport.add(_state.current_sol_report, "production", "air", air)
@@ -517,6 +549,8 @@ func _tick() -> void:
 				member.health = 0.0
 				member.alive = false
 				_record("crew_died", member.id, {"reason": "resource_deficit"})
+	_director.after_step()
+	_drain_survival()
 	_apply_radiation()
 	# La construcción termina después de la economía; produce desde el siguiente tick.
 	for building: Dictionary in _state.buildings:
@@ -563,11 +597,11 @@ func _resolve_power() -> void:
 			building.warning = "maintenance_shutdown"
 		elif building.maintenance.state == "degraded":
 			building.warning = "maintenance_degraded"
-		if building.remaining_seconds > 0 or not building.enabled or building.maintenance.state == "shutdown":
+		if building.remaining_seconds > 0 or not building.enabled or building.maintenance.state == "shutdown" or building.covered or building.night_cut or building.repair_remaining > 0:
 			continue
 		var definition: Dictionary = _definition(building)
 		var bonus := float(_config.engineer_multiplier) if _has_alive("engineer") else 1.0
-		var output := float(definition.power_supply) * bonus * _maintenance.multiplier(building)
+		var output := float(definition.power_supply) * bonus * _maintenance.multiplier(building) * _director.multiplier(building)
 		if building.kind == "solar":
 			output *= float(_config.events.storm.solar_multiplier) if _active("storm") else 1.0
 			if not _is_day():
@@ -575,9 +609,9 @@ func _resolve_power() -> void:
 		building.power_output = output
 		supply += output
 	var needed_by_kind: Dictionary = {}
-	for kind: String in POWER_ORDER:
+	for kind: String in _power_order():
 		for building: Dictionary in _state.buildings:
-			if building.kind != kind or building.remaining_seconds > 0 or not building.enabled or building.maintenance.state == "shutdown":
+			if building.kind != kind or building.remaining_seconds > 0 or not building.enabled or building.maintenance.state == "shutdown" or building.covered or building.night_cut or building.repair_remaining > 0:
 				continue
 			var needed := float(_definition(building).power_demand)
 			if kind == "oxygen_generator" and _has_alive("technician"):
@@ -587,7 +621,7 @@ func _resolve_power() -> void:
 			needed_by_kind[building.id] = needed
 	var battery_rate := minf(float(_config.energy_discharge_rate), float(_state.resources.energy))
 	var available := supply + battery_rate
-	for kind: String in POWER_ORDER:
+	for kind: String in _power_order():
 		for building: Dictionary in _state.buildings:
 			if building.kind != kind or not needed_by_kind.has(building.id):
 				continue
@@ -659,6 +693,11 @@ func _apply_radiation() -> void:
 	var raw := float(rules.ambient_dose_per_sol) / float(_config.sol_seconds)
 	if _active("solar_particles"):
 		raw += float(_config.events.solar_particles.dose_per_sol) / float(_config.sol_seconds)
+	var outside_work: bool = _state.salvage.remaining > 0
+	for building: Dictionary in _state.buildings:
+		outside_work = outside_work or building.repair_remaining > 0
+	if outside_work and not _state.sheltered:
+		raw += float(_config.survival.outside_dose_per_second)
 	var multiplier := 1.0
 	if _has_alive("medic"):
 		multiplier *= float(rules.medic_multiplier)
@@ -744,6 +783,7 @@ func _building(id: String, kind: String, cell: Vector2i, duration: int) -> Dicti
 	var building := {"id": id, "kind": kind, "x": cell.x, "y": cell.y, "level": 1,
 		"enabled": true, "powered": false, "remaining_seconds": duration, "warning": "",
 		"upgrade_remaining_work": 0.0, "upgrade_total_work": 0.0}
+	building.merge({"damage": 0.0, "crop_health": 100.0, "covered": false, "cover_seconds": 0, "storm_decision": "inaction", "night_cut": false, "cut_seconds": 0, "night_decision": "", "repair_remaining": 0, "repair_decision": "", "lotus": false})
 	_maintenance.attach(building)
 	return building
 
@@ -783,3 +823,37 @@ func _publish() -> void:
 
 func _reply(ok: bool, code: String = "", cost: Dictionary = {}, result: Dictionary = {}) -> Dictionary:
 	return {"ok": ok, "error_code": code, "cost": cost.duplicate(true), "result": result.duplicate(true)}
+
+func _power_order() -> Array:
+	if _state.get("priority", "air") == "food":
+		return ["habitat", "greenhouse", "oxygen_generator", "laboratory", "solar", "reactor"]
+	return POWER_ORDER
+
+func _drain_survival() -> void:
+	for fact: Dictionary in _director.facts:
+		if fact.reason == "salvage_returned":
+			SolReport.add(_state.current_sol_report, "imports", "regolith", float(fact.details.regolith))
+		for resource: String in fact.details.get("cost", {}):
+			SolReport.add(_state.current_sol_report, "consumption", resource, float(fact.details.cost[resource]))
+		_record(fact.reason, fact.target, fact.details)
+	_director.facts.clear()
+
+func choose_decision(id: String, option_id: String) -> Dictionary:
+	if _publishing or _state.get("phase") != "running":
+		return _reply(false, "invalid_phase")
+	var result := _director.choose(id, option_id)
+	if result.ok:
+		_drain_survival()
+		_resolve_power()
+		_publish()
+	return result
+
+func survival_command(action: String, building_id: String = "") -> Dictionary:
+	if _publishing or _state.get("phase") not in ["planning", "running"]:
+		return _reply(false, "invalid_phase")
+	var result := _director.command(action, building_id)
+	if result.ok:
+		_drain_survival()
+		_resolve_power()
+		_publish()
+	return result

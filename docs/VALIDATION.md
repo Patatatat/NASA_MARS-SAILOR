@@ -1,3 +1,22 @@
+# Validación del bucle de supervivencia · 2026-11-14
+
+**Resultado final: 78 comprobaciones de simulación, 119 de supervivencia y 58 de interfaz, cero fallos; historial, importación y arranque correctos.**
+
+Ejecutar `tests/run_checks.ps1 -GodotExe <ruta-al-ejecutable>` desde PowerShell. El runner aísla preferencias, limita procesos y rechaza errores aunque el motor devuelva código cero. Las suites de masa/agua y 12 soles son históricas y no se ejecutan como contrato actual.
+
+Cobertura añadida: seis partidas completas (tres escenarios × semillas 1/123), cuatro supervivientes en cada una al sol 42 usando una política que atiende mantenimiento y refugio; inacción sin soporte vital termina en derrota. Las intervenciones automatizadas prueban reglas, no dificultad humana del minijuego. También: cola de dos crisis, opción inválida sin mutación, decisión exclusiva, daño por inacción, cubrir/LOTUS, reparación pagada y pausada, devolución única de recolección, noche/amanecer, cultivo, dosis y sacrificio alimentario del refugio, equivalencia entre frames y reinicio.
+
+La integración de interfaz recorre menú, selección, tablero, construcción, mantenimiento mediante slider, pausa, final y reinicio. Capturas OpenGL revisadas de selección, base y decisiones en `local-only/loop-*.png`. Se mejoraron tamaños de etiquetas, jerarquía del briefing y visibilidad de terreno/obstáculos. Los tres avisos históricos de caché `shader_gles3.cpp:802` siguen apareciendo en la captura OpenGL, aunque se renderiza el juego; headless no los emite. No se declara validada exportación web ni rendimiento de GPU por estas pruebas.
+
+Recorrido manual sugerido: F5 → Contra el polvo, semilla 1 → cuatro especialistas → dos solares, oxígeno e invernadero → iniciar. Abrir Decisiones al aviso, cubrir un solar y mantener otro; comprobar generación, daño y reparación al acabar. Probar corte nocturno y recolección con batería suficiente. En otra partida, Cosecha quebrada permite ver y reparar el cultivo inicial. Para una ruta de aprendizaje estable, Horizonte rojo permite reactor + oxígeno + cultivo por 90 de regolito; atender sus mantenimientos sigue siendo necesario.
+
+El balance no se declara óptimo ni libre de estrategias dominantes a partir de estas semillas. Queda la valoración humana de dificultad, claridad y ritmo. Sonido reservado al compañero responsable, sin cambios en esta entrega.
+
+---
+
+
+## Registro histórico
+
 # Verificación de la base inicial
 
 Verificación más reciente tras fusionar la base local con Andrés: **78 comprobaciones de simulación vigente y 57 de interfaz, 0 fallos**, más historial, importación y arranque. El cambio local a cuatro recursos y 42 soles ya estaba presente antes de la fusión y se conserva; las cifras históricas siguientes pertenecen a versiones anteriores. El runner ahora ejecuta `test_current_simulation.gd` en lugar de los scripts que aún dependen de masa/agua y 12 soles. Ver [INTEGRACION_ANDRES.md](INTEGRACION_ANDRES.md) para alcance, decisiones y pendientes; no confundir esta verificación con cobertura completa del balance nuevo.
