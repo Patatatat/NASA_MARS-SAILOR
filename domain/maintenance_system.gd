@@ -143,10 +143,10 @@ func reactivate(building_id: String) -> Dictionary:
 		return _reply(false, "maintenance_not_shutdown")
 	if _state.elapsed_seconds < m.shutdown_until:
 		return _reply(false, "maintenance_cooling_down")
-	var cost := {"mass": float(_rules.reactivation_mass)}
-	if _state.resources.mass < cost.mass:
-		return _reply(false, "insufficient_mass", {}, cost)
-	_state.resources.mass -= cost.mass
+	var cost := {"regolith": float(_rules.reactivation_regolith)}
+	if _state.resources.regolith < cost.regolith:
+		return _reply(false, "insufficient_regolith", {}, cost)
+	_state.resources.regolith -= cost.regolith
 	m.state = "healthy"
 	m.age_seconds = 0
 	m.shutdown_until = 0

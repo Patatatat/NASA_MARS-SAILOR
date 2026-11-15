@@ -1,9 +1,9 @@
 extends RefCounted
 ## Validación de la configuración inicial. No consume los JSON históricos.
 
-const RESOURCES := ["mass", "regolith", "air", "water", "food"]
+const RESOURCES := ["regolith", "energy", "air", "food"]
 const BUILDINGS := ["habitat", "solar", "reactor", "oxygen_generator", "greenhouse", "laboratory"]
-const FIELDS := ["mass", "build_seconds", "power_supply", "power_demand", "air_per_sol", "food_per_sol", "water_per_sol"]
+const FIELDS := ["regolith", "build_seconds", "power_supply", "power_demand", "air_per_sol", "food_per_sol"]
 
 static func load_file(path: String = "res://data/balance.json") -> Dictionary:
 	if not FileAccess.file_exists(path):
@@ -22,16 +22,29 @@ static func validate(value: Variant) -> Dictionary:
 			return _error(key)
 	if data.schema_version != 1 or data.grid_size != 32 or data.sol_seconds > 3600 or data.target_sols > 100:
 		return _error("schema_or_limits")
-	for key: String in ["health_loss_per_missing_unit", "engineer_multiplier", "botanist_multiplier", "technician_multiplier"]:
+	if not data.get("map_sizes") is Array or data.map_sizes.is_empty():
+		return _error("map_sizes")
+	for map_size: Variant in data.map_sizes:
+		if not _integer(map_size, 12) or int(map_size) > int(data.grid_size):
+			return _error("map_sizes")
+	if not _probability(data.get("map_obstacle_ratio")):
+		return _error("map_obstacle_ratio")
+	for key: String in ["health_loss_per_missing_unit", "engineer_multiplier", "botanist_multiplier", "technician_multiplier", "energy_capacity", "energy_discharge_rate", "day_seconds"]:
 		if not _number(data.get(key), 0.0):
 			return _error(key)
+	if int(data.day_seconds) >= int(data.sol_seconds):
+		return _error("day_seconds")
+	if not _integer(data.day_seconds, 1) or float(data.energy_capacity) <= 0 or float(data.energy_discharge_rate) <= 0:
+		return _error("energy_rules")
 	for section: String in ["initial", "consumption_per_crew_per_sol", "buildings"]:
 		if not data.get(section) is Dictionary:
 			return _error(section)
 	for key: String in RESOURCES:
 		if not _number(data.initial.get(key), 0.0):
 			return _error("initial." + key)
-	for key: String in ["air", "water", "food"]:
+	if float(data.initial.energy) > float(data.energy_capacity):
+		return _error("initial.energy")
+	for key: String in ["air", "food"]:
 		if not _number(data.consumption_per_crew_per_sol.get(key), 0.0):
 			return _error("consumption." + key)
 	for id: String in BUILDINGS:
@@ -72,8 +85,8 @@ static func _validate_systems(data: Dictionary) -> String:
 	for key: String in ["degraded_multiplier", "robot_difficulty_multiplier"]:
 		if not _probability(maintenance.get(key)):
 			return "maintenance." + key
-	if not _number(maintenance.get("reactivation_mass"), 0):
-		return "maintenance.reactivation_mass"
+	if not _number(maintenance.get("reactivation_regolith"), 0):
+		return "maintenance.reactivation_regolith"
 	if not _number(data.get("scientist_upgrade_duration_multiplier"), 0.001) or float(data.scientist_upgrade_duration_multiplier) > 1:
 		return "scientist_upgrade_duration_multiplier"
 	if not data.get("upgrades") is Dictionary:
@@ -84,7 +97,7 @@ static func _validate_systems(data: Dictionary) -> String:
 			return "upgrades." + kind
 		if not _integer(upgrade.get("duration_seconds"), 1):
 			return "upgrades." + kind + ".duration_seconds"
-		for field: String in ["mass", "power_supply", "power_demand", "air_per_sol", "food_per_sol", "water_per_sol"]:
+		for field: String in ["regolith", "power_supply", "power_demand", "air_per_sol", "food_per_sol"]:
 			if not _number(upgrade.get(field), 0):
 				return "upgrades." + kind + "." + field
 	for section: String in ["events", "radiation", "roberts"]:
@@ -92,19 +105,20 @@ static func _validate_systems(data: Dictionary) -> String:
 			return section
 	if not _integer(data.events.get("warning_seconds"), 1):
 		return "events.warning_seconds"
-	var previous_end := 0
 	for kind: String in ["storm", "solar_particles"]:
 		var event: Variant = data.events.get(kind)
 		if not event is Dictionary:
 			return "events." + kind
-		if not _probability(event.get("probability")) or not _integer(event.get("start_seconds"), 1) or not _integer(event.get("duration_seconds"), 1):
+		if not _probability(event.get("probability")) or not _integer(event.get("start_sols_min"), 1) or not _integer(event.get("start_sols_max"), 1) or not _integer(event.get("duration_sols"), 1):
 			return "events." + kind
-		if event.start_seconds - data.events.warning_seconds < previous_end:
-			return "events.overlap_or_warning"
-		previous_end = int(event.start_seconds + event.duration_seconds)
+		if int(event.start_sols_min) > int(event.start_sols_max) or int(event.start_sols_max) + int(event.duration_sols) >= int(data.target_sols):
+			return "events.window"
+	var storm_end_max := int(data.events.storm.start_sols_max) + int(data.events.storm.duration_sols)
+	if int(data.events.solar_particles.start_sols_min) < storm_end_max:
+		return "events.overlap"
 	if not _probability(data.events.storm.get("solar_multiplier")) or not _number(data.events.solar_particles.get("dose_per_sol"), 0):
 		return "events.effects"
-	for key: String in ["ambient_dose_per_sol", "damage_threshold", "health_loss_per_dose", "bury_mass", "bury_regolith"]:
+	for key: String in ["ambient_dose_per_sol", "damage_threshold", "health_loss_per_dose", "bury_regolith"]:
 		if not _number(data.radiation.get(key), 0):
 			return "radiation." + key
 	for key: String in ["medic_multiplier", "shelter_multiplier", "buried_multiplier"]:
@@ -126,7 +140,7 @@ static func _validate_systems(data: Dictionary) -> String:
 		var destination: Variant = data.roberts.destinations.get(id)
 		if not destination is Dictionary:
 			return "roberts." + id
-		var expected_resource: String = {"ice": "water", "quarry": "regolith", "wreckage": "mass"}[id]
+		var expected_resource: String = {"ice": "food", "quarry": "regolith", "wreckage": "regolith"}[id]
 		if destination.get("resource") != expected_resource or not _number(destination.get("amount"), 0) or not _probability(destination.get("loss_probability")):
 			return "roberts." + id
 	return ""

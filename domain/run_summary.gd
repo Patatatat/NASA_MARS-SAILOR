@@ -1,7 +1,7 @@
 extends RefCounted
 ## Resumen medido, sin UI ni cálculo del puntaje ponderado.
 
-const VITALS := ["air", "water", "food"]
+const VITALS := ["air", "food"]
 
 static func initialize(state: Dictionary) -> void:
 	state.run_summary = {}
@@ -71,6 +71,9 @@ static func sample(state: Dictionary, config: Dictionary) -> void:
 		demand[resource] = float(config.consumption_per_crew_per_sol[resource]) * alive
 		if float(state.resources[resource]) <= float(demand[resource]) * float(config.summary.critical_reserve_sols):
 			critical_reasons.append("low_reserve_" + resource)
+	var critical_energy_reserve := float(state.power.get("demand", 0.0)) * float(config.sol_seconds) * float(config.summary.critical_reserve_sols)
+	if float(state.resources.energy) <= critical_energy_reserve:
+		critical_reasons.append("low_reserve_energy")
 	var previous: Dictionary = state.summary_history[-1] if not state.summary_history.is_empty() else {}
 	if not previous.is_empty():
 		for resource: String in VITALS:
@@ -91,7 +94,8 @@ static func sample(state: Dictionary, config: Dictionary) -> void:
 				"resources": state.resources.duplicate(true), "habitat_powered": state.buildings[0].powered,
 				"crew": state.crew.duplicate(true), "deficits": state.deficits.duplicate(true)}
 	state.summary_history.append({"seconds": state.elapsed_seconds, "resources": state.resources.duplicate(true),
-		"crew_demand_per_sol": demand, "alive": alive, "deficits": state.deficits.duplicate(true)})
+		"crew_demand_per_sol": demand, "power_demand": float(state.power.get("demand", 0.0)),
+		"alive": alive, "deficits": state.deficits.duplicate(true)})
 	var oldest: int = state.elapsed_seconds - int(config.summary.window_sols * config.sol_seconds)
 	while state.summary_history.size() > 1 and state.summary_history[0].seconds < oldest:
 		state.summary_history.pop_front()
@@ -117,7 +121,7 @@ static func build(state: Dictionary, config: Dictionary) -> Dictionary:
 	var survival := clampf(float(state.elapsed_seconds) / float(target_seconds), 0.0, 1.0)
 	var crew_value := clampf(health / 400.0, 0.0, 1.0)
 	var resilience := float(successful) / float(opportunities.size()) if not opportunities.is_empty() else float(config.summary.resilience_neutral)
-	return {"schema_version": 1, "seed": state.seed, "run_generation": state.run_generation,
+	return {"schema_version": 1, "seed": state.seed, "run_generation": state.run_generation, "map": state.map.duplicate(true),
 		"verdict": state.result.verdict, "elapsed_seconds": state.elapsed_seconds, "target_seconds": target_seconds,
 		"components": {"survival": survival, "crew": crew_value, "sustainability": sustainability.value, "resilience": resilience},
 		"survival": {"elapsed_seconds": state.elapsed_seconds, "target_seconds": target_seconds},
@@ -159,9 +163,30 @@ static func _sustainability(state: Dictionary, config: Dictionary) -> Dictionary
 			"delta": delta, "net_per_sol": rate, "mean_crew_demand_per_sol": mean_demand,
 			"availability": availability, "trend_value": trend, "value": value}
 		total += value
+	var energy_value := _energy_sustainability(history, config, duration)
+	resources.energy = energy_value
 	return {"start_seconds": opening.seconds, "end_seconds": closing.seconds, "window_seconds": duration,
 		"requested_window_seconds": int(config.summary.window_sols * config.sol_seconds),
-		"resources": resources, "value": clampf(total / 3.0, 0.0, 1.0)}
+		"resources": resources, "value": clampf((total + float(energy_value.value)) / 3.0, 0.0, 1.0)}
+
+static func _energy_sustainability(history: Array, config: Dictionary, duration: int) -> Dictionary:
+	var opening: Dictionary = history[0]
+	var closing: Dictionary = history[-1]
+	var capacity := float(config.energy_capacity)
+	var availability := 0.0
+	var demand := 0.0
+	for index: int in range(1, history.size()):
+		var point: Dictionary = history[index]
+		availability += clampf(float(point.resources.energy) / capacity, 0.0, 1.0) if capacity > 0 else 0.0
+		demand += float(point.power_demand) * float(config.sol_seconds)
+	availability /= maxi(duration, 1)
+	demand /= maxi(duration, 1)
+	var delta := float(closing.resources.energy) - float(opening.resources.energy)
+	var rate := delta * float(config.sol_seconds) / maxi(duration, 1)
+	var trend := clampf(1.0 + rate / maxf(demand, 0.001), 0.0, 1.0)
+	return {"opening": opening.resources.energy, "closing": closing.resources.energy, "delta": delta,
+		"net_per_sol": rate, "mean_crew_demand_per_sol": demand, "availability": availability,
+		"trend_value": trend, "value": availability * trend}
 
 static func _causes(state: Dictionary, limit: int) -> Array[Dictionary]:
 	var causes: Array[Dictionary] = []
@@ -177,7 +202,7 @@ static func _causes(state: Dictionary, limit: int) -> Array[Dictionary]:
 			if fact.reason == reason:
 				causes.append({"kind": reason, "target": fact.target, "seconds": fact.seconds,
 					"details": fact.details.duplicate(true), "fact_ids": [fact.id], "sol_refs": []})
-	for reason: String in ["water_shortage", "power_shortage", "disabled"]:
+	for reason: String in ["power_shortage", "disabled"]:
 		var buildings := {}
 		for report: Dictionary in state.sol_reports:
 			for id: String in report.blocked_seconds:

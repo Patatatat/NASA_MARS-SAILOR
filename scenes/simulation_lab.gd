@@ -373,14 +373,16 @@ func _create_resource_hud(parent: Control) -> void:
 	row.add_theme_constant_override("separation", 12)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(row)
-	for key: String in ["mass", "air", "water", "food", "regolith", "energy"]:
+	for key: String in ["regolith", "energy", "air", "food"]:
 		var label := Label.new()
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		label.text = "%s: —" % _resource_name(key)
 		if key == "energy":
-			label.tooltip_text = "Suministro eléctrico disponible / demanda eléctrica"
+			label.tooltip_text = "Energía almacenada / capacidad; la generación y demanda varían con el ciclo día/noche."
+		elif key == "food":
+			label.tooltip_text = "Reserva combinada de agua y comida para la tripulación."
 		row.add_child(label)
 		_resource_labels[key] = label
 
@@ -536,11 +538,11 @@ func _refresh_build_menu() -> void:
 	for kind: String in _kinds:
 		var button: Button = _build_menu_buttons[kind]
 		var definition: Dictionary = _building_definitions.get(kind, {})
-		var cost := float(definition.get("mass", 0.0))
+		var cost := float(definition.get("regolith", 0.0))
 		var duration := int(definition.get("build_seconds", 0))
 		var footprint := simulation.get_building_footprint_size(kind)
 		var preview := simulation.preview_placement(kind, _build_menu_cell)
-		var text := "%s · %d×%d · %.0f masa · %d s" % [BUILDING_NAMES[kind], footprint, footprint, cost, duration]
+		var text := "%s · %d×%d · %.0f regolito · %d s" % [BUILDING_NAMES[kind], footprint, footprint, cost, duration]
 		if not preview.ok:
 			text += " · %s" % _placement_error_text(preview.error_code)
 		button.text = text
@@ -548,11 +550,12 @@ func _refresh_build_menu() -> void:
 
 func _placement_error_text(code: String) -> String:
 	var errors: Dictionary = {
-		"insufficient_mass": "masa insuficiente",
+		"insufficient_regolith": "regolito insuficiente",
 		"reactor_too_close": "reactor muy cerca",
 		"invalid_phase": "partida no disponible",
 		"outside_grid": "fuera del mapa",
 		"footprint_outside_grid": "espacio fuera del mapa",
+		"terrain_blocked": "terreno bloqueado",
 		"occupied_footprint": "espacio ocupado",
 		"invalid_building": "no disponible"
 	}
@@ -567,7 +570,7 @@ func _place_selected_building(kind: String) -> void:
 		_refresh_build_menu()
 
 func _resource_name(key: String) -> String:
-	var names: Dictionary = {"mass": "Masa", "air": "Aire", "water": "Agua", "food": "Comida", "regolith": "Regolito", "energy": "Potencia"}
+	var names: Dictionary = {"air": "Oxígeno", "food": "Alimento", "regolith": "Regolito", "energy": "Energía"}
 	return str(names.get(key, key.capitalize()))
 
 func _load_selected_crew() -> void:
@@ -816,22 +819,25 @@ func _render(snapshot: Dictionary) -> void:
 	if snapshot.phase == "finished":
 		_speed_menu.hide()
 		_camera_controls_panel.show()
-	for key: String in ["mass", "air", "water", "food", "regolith"]:
+	for key: String in ["regolith", "air", "food"]:
 		_resource_labels[key].text = "%s: %.1f" % [_resource_name(key), resources[key]]
-	_resource_labels["energy"].text = "Energía: %.1f / %.1f" % [power.supply, power.demand]
+	_resource_labels["energy"].text = "Energía: %.1f / %.1f" % [resources.energy, power.capacity]
 	var phase_name: String = {"planning": "Planificación", "running": "En curso", "finished": "Finalizada"}[snapshot.phase]
 	_sol_label.text = "%s · Sol %d" % [phase_name, snapshot.sol]
 	if _build_menu != null and _build_menu.visible:
 		_refresh_build_menu()
-	_status.text = "%s | Sol %d · %d s | ×%s | Pausa: %s\nPotencia %.1f / demanda %.1f" % [snapshot.phase, snapshot.sol, snapshot.elapsed_seconds, snapshot.speed, snapshot.paused, power.supply, power.demand]
+	_status.text = "%s | Sol %d · %d s | %s | Mapa %s %s | ×%s | Pausa: %s\nGeneración %.1f / demanda %.1f" % [snapshot.phase, snapshot.sol, snapshot.elapsed_seconds, "Día" if power.is_day else "Noche", str(snapshot.map.size), str(snapshot.map.shape), snapshot.speed, snapshot.paused, power.supply, power.demand]
 	var alive := 0
 	for member: Dictionary in snapshot.crew:
 		if member.alive:
 			alive += 1
-	_requirements.text = "Requeridos por sol (%d tripulantes): Aire %.1f · Agua %.1f · Comida %.1f" % [alive, _consumption_per_crew.get("air", 0.0) * alive, _consumption_per_crew.get("water", 0.0) * alive, _consumption_per_crew.get("food", 0.0) * alive]
+	_requirements.text = "Requeridos por sol (%d tripulantes): Oxígeno %.1f · Alimento combinado %.1f" % [alive, _consumption_per_crew.get("air", 0.0) * alive, _consumption_per_crew.get("food", 0.0) * alive]
 
 	var buildings_by_cell: Dictionary = {}
 	var reserved_cells: Dictionary = {}
+	var blocked_cells: Dictionary = {}
+	for blocked_index: int in snapshot.map.blocked_cells:
+		blocked_cells[blocked_index] = true
 	for building: Dictionary in snapshot.buildings:
 		buildings_by_cell[int(building.y) * GRID_SIZE + int(building.x)] = building
 		var anchor := Vector2i(int(building.x), int(building.y))
@@ -839,7 +845,9 @@ func _render(snapshot: Dictionary) -> void:
 			reserved_cells[footprint_cell.y * GRID_SIZE + footprint_cell.x] = true
 	for index: int in range(_cell_nodes.size()):
 		if not buildings_by_cell.has(index):
-			if reserved_cells.has(index):
+			if blocked_cells.has(index):
+				_cell_materials[index].albedo_color = Color("34434d")
+			elif reserved_cells.has(index):
 				_cell_materials[index].albedo_color = Color("71634f")
 			else:
 				_cell_materials[index].albedo_color = Color("b9a783") if (index % GRID_SIZE + int(index / GRID_SIZE)) % 2 == 0 else Color("a99169")
@@ -1052,7 +1060,7 @@ func _render_run_summary(snapshot: Dictionary, reset_position: bool) -> void:
 	for member: Dictionary in report.crew.members:
 		lines.append("%s: %.1f salud · %.1f dosis%s" % [CREW_NAMES[member.id], member.health, member.dose, " · fallecido" if not member.alive else ""])
 	lines.append("\nRESERVAS · últimos %d segundos" % report.sustainability.window_seconds)
-	for resource: String in ["air", "water", "food"]:
+	for resource: String in ["air", "food", "energy"]:
 		var stock: Dictionary = report.sustainability.resources[resource]
 		lines.append("%s: %.1f · tendencia %+.1f / sol" % [_resource_name(resource), stock.closing, stock.net_per_sol])
 	lines.append("\nHECHOS DE LA MISIÓN")
@@ -1073,7 +1081,7 @@ func _summary_cause_text(cause: Dictionary, snapshot: Dictionary) -> String:
 		"robert_lost":
 			return "%s se perdió en una expedición%s." % [target, " expuesta a tormenta" if cause.details.storm_exposed else ""]
 		"building_blocked":
-			var reasons := {"water_shortage": "sin agua", "power_shortage": "sin potencia", "disabled": "apagado por orden del jugador"}
+			var reasons := {"power_shortage": "sin energía", "disabled": "apagado por orden del jugador"}
 			return "%s estuvo %s durante %d segundos." % [target, reasons.get(cause.reason, cause.reason), cause.duration_seconds]
 		"robert_returned":
 			var cargo: PackedStringArray = []
@@ -1132,7 +1140,8 @@ func _error_text(code: String) -> String:
 		"insufficient_power": "Falta potencia libre para otra salida de ROBERT. Enciende una fuente o apaga un consumidor.",
 		"robert_unavailable": "Este ROBERT sigue en misión o se perdió. Selecciona otro o espera el regreso.",
 		"crew_sheltered": "Sal del refugio para iniciar una expedición o mejora.",
-		"insufficient_mass": "No alcanza la masa para esta acción.",
+		"insufficient_regolith": "No alcanza el regolito para esta acción.",
+		"insufficient_resources": "No alcanza el regolito para proteger el hábitat.",
 		"max_level": "Este edificio ya está en nivel 2.",
 		"upgrade_in_progress": "Este edificio ya tiene una mejora en curso.",
 		"building_under_construction": "Espera a que termine la construcción.",
@@ -1182,7 +1191,7 @@ func _render_domain(snapshot: Dictionary) -> void:
 	var event_text := "ninguno"
 	if not snapshot.event.is_empty():
 		event_text = "%s (%s, inicio %ds, fin %ds)" % [snapshot.event.kind, snapshot.event.state, snapshot.event.start_seconds, snapshot.event.end_seconds]
-	_event_status.text = "Tormenta %d%% · Partículas %d%%\n%s · Refugio: %s" % [roundi(snapshot.forecast.storm.probability * 100), roundi(snapshot.forecast.solar_particles.probability * 100), event_text, "activo" if snapshot.sheltered else "inactivo"]
+	_event_status.text = "Tormenta %d%% · sol %d | Partículas %d%% · sol %d\n%s · Refugio: %s" % [roundi(snapshot.forecast.storm.probability * 100), int(snapshot.forecast.storm.start_sol), roundi(snapshot.forecast.solar_particles.probability * 100), int(snapshot.forecast.solar_particles.start_sol), event_text, "activo" if snapshot.sheltered else "inactivo"]
 	var destination: String = ["ice", "quarry", "wreckage"][_destination_choice.selected]
 	var preview: Dictionary = simulation.preview_robert("robert_%d" % (_robot_choice.selected + 1), destination)
 	_destination_choice.tooltip_text = "Carga %s %s · riesgo actual %.1f%% (puede subir por tormenta)" % [preview.result.amount, preview.result.resource, preview.result.loss_probability * 100] if preview.ok else _error_text(preview.error_code)
@@ -1200,12 +1209,12 @@ func _render_domain(snapshot: Dictionary) -> void:
 	_upgrade_status.text = "Construye un edificio para mejorar."
 	if _upgrade_choice.selected >= 0:
 		var upgrade: Dictionary = simulation.preview_upgrade(str(_upgrade_choice.get_item_metadata(_upgrade_choice.selected)))
-		_upgrade_status.text = "%s masa · %s s estimados" % [upgrade.cost.mass, upgrade.result.duration_seconds] if upgrade.ok else _error_text(upgrade.error_code)
+		_upgrade_status.text = "%s regolito · %s s estimados" % [upgrade.cost.regolith, upgrade.result.duration_seconds] if upgrade.ok else _error_text(upgrade.error_code)
 	var lines: PackedStringArray = []
 	for member: Dictionary in snapshot.crew:
 		lines.append("%s: %.1f salud · %.2f dosis" % [member.id, member.health, member.dose])
-	_crew_status.text = _selected_crew_summary() + "\n\n" + "\n".join(lines)
 	lines.append("Regolito: %.1f" % r.regolith)
+	_crew_status.text = _selected_crew_summary() + "\n\n" + "\n".join(lines)
 	for robot: Dictionary in snapshot.roberts:
 		if robot.state == "on_mission":
 			lines.append("%s: en misión → %s · faltan %ds · soporte %s" % [robot.id, robot.destination, maxi(0, robot.return_seconds - snapshot.elapsed_seconds), robot.powered])

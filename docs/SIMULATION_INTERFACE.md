@@ -1,5 +1,7 @@
 # Contrato de simulación · resumen final v1
 
+> **Migración vigente (propuesta del hackathon):** esta base está migrando desde el contrato histórico descrito abajo. El estado ejecutable ahora usa cuatro existencias: `regolith`, `energy`, `air` y `food` (agua + comida). El sol nominal dura 60 s dentro de una partida de 42 soles; hay 40 s de día y 20 s de noche, energía almacenada con capacidad, y mapa de tamaño 16/24/32 con terreno bloqueado generado por semilla. Algunos detalles históricos de este documento aún no se han actualizado y no deben prevalecer sobre `docs/PROPUESTA_BUCLE_HACKATHON.md` ni el código vigente.
+
 ## Integración de interfaz y simulación
 
 La decisión confirmada por Rafael al integrar sustituye el mapa original: **32×32 y huellas de varias celdas**, con el tablero 3D de Andrés. Se conservan tiempos, costos y sistemas actuales de simulación. F5 abre `crew_selection.tscn`; la selección muestra las probabilidades configuradas antes de elegir equipo y pasa cuatro IDs validados a `simulation_lab.tscn`.
@@ -17,28 +19,28 @@ No requiere autoloads. La instancia es un `RefCounted` independiente de escenas.
 | API | Entrada / salida |
 | --- | --- |
 | `configure(data: Dictionary)` | Valida y copia datos; solo antes de inicializar la partida. Para otra configuración crear otra instancia. |
-| `reset_run(crew_ids: Array, run_seed: int = 1)` | Exactamente 4 IDs únicos de los 6 disponibles. Reinicia reloj, edificios, registro, salud y final. Error conserva la partida anterior. |
+| `reset_run(crew_ids: Array, run_seed: int = 1)` | Exactamente 4 IDs únicos de los 6 disponibles. Reinicia reloj, mapa, edificios, registro, salud y final. El mismo seed reproduce el mapa y las ventanas de eventos. Error conserva la partida anterior. |
 | `get_catalog()` / `get_snapshot()` | Copias profundas de configuración / estado. |
 | `get_run_summary()` | Respuesta estándar con `result` = resumen final v1; errores `not_initialized` / `not_finished` si todavía no existe. No muta y se puede consultar durante `run_finished`. |
-| `preview_placement(kind: String, cell: Vector2i)` | Comprueba huella completa, límites, tipo, distancia y presupuesto; devuelve costo y duración sin mutar. |
-| `place_building(kind: String, cell: Vector2i)` | Revalida, cobra una sola vez y reserva la huella; retorna `result.building_id`. |
+| `preview_placement(kind: String, cell: Vector2i)` | Comprueba huella completa, límites, terreno bloqueado, tipo, distancia y regolito; devuelve costo y duración sin mutar. |
+| `place_building(kind: String, cell: Vector2i)` | Revalida, cobra regolito una sola vez y reserva la huella; retorna `result.building_id`. |
 | `get_building_footprint_size(kind: String)` / `get_building_footprint_cells(kind, anchor)` | Consulta el lado en celdas y todas las coordenadas ocupadas por un edificio. |
 | `set_enabled(building_id: String, enabled: bool)` | Enciende/apaga; repetir mismo estado no duplica registro. Hábitat no apagable. |
 | `start_run()` | Solo desde planificación. |
 | `set_paused(paused: bool)` | Solo durante simulación. |
 | `set_speed(speed: float)` | 0.5, 1, 2 o 4. |
 | `advance(real_seconds: float)` | Delta real finito, no negativo. Pasos lógicos de 1 segundo. |
-| `get_forecast()` | Configuración pública de probabilidades, avisos y horarios; disponible después de configurar, antes de seleccionar equipo. No revela tiradas. |
+| `get_forecast()` | Antes de una partida, devuelve probabilidades y rangos. Después de `reset_run`, incluye ventanas sorteadas para esa semilla sin revelar si ocurrirán. |
 | `preview_robert(robert_id: String, destination_id: String)` | Requisitos actuales, potencia reservada, duración, carga y riesgo estimado; no muta. |
 | `send_robert(robert_id: String, destination_id: String)` | Revalida y despacha una misión; devuelve ID y segundo de retorno. |
 | `set_sheltered(enabled: bool)` | Refugio: reduce dosis futura, detiene obras/enterramiento y bloquea nuevas expediciones. |
-| `bury_habitat()` | Cobra masa y regolito al iniciar; protección al terminar. Sin cancelación. |
+| `bury_habitat()` | Cobra regolito al iniciar; protección al terminar. Sin cancelación. |
 | `preview_upgrade(building_id: String)` | Valida y devuelve costo, duración estimada, duración base, definición actual y definición del nivel 2, sin mutación. |
-| `start_upgrade(building_id: String)` | Revalida, cobra masa una vez e inicia trabajo. Mantiene nivel 1 durante la obra. |
+| `start_upgrade(building_id: String)` | Revalida, cobra regolito una vez e inicia trabajo. Mantiene nivel 1 durante la obra. |
 | `get_building_status(building_id: String)` | Respuesta `{ok, error_code, cost, result}` con inspector e historial local; copia profunda. |
 | `begin_maintenance(building_id: String)` | Abre un intento y devuelve datos/token del minijuego. |
 | `apply_maintenance_result(session_id: String, success: bool, elapsed_seconds: float, abandoned: bool = false)` | Aplica una sola vez el resultado de ese intento. |
-| `reactivate_building(building_id: String)` | Después del enfriamiento, cobra masa y recupera rendimiento normal. |
+| `reactivate_building(building_id: String)` | Después del enfriamiento, cobra regolito y recupera rendimiento normal. |
 
 Los comandos retornan `{ok, error_code, cost, result}`. Un fallo no muta. Códigos principales: `select_four`, `invalid_crew`, `invalid_phase`, `invalid_building`, `outside_grid`, `footprint_outside_grid`, `occupied_footprint`, `reactor_too_close`, `insufficient_mass`, `unknown_building`, `habitat_required`, `invalid_speed`, `invalid_delta`, `busy`.
 
